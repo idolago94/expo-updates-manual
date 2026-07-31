@@ -1,0 +1,83 @@
+name: Publish EAS Update (manual selection)
+
+# Runs on every commit to a version/* branch, and when such a branch is
+# first created (covers the "eas update --auto" style flow, just gated
+# to branches instead of running on every push everywhere).
+on:
+  push:
+    branches:
+      - 'version/**'
+  create:
+
+jobs:
+  publish-update:
+    if: github.ref_type == 'branch' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Extract branch name
+        id: branch
+        run: echo "name=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish EAS Update
+        run: |
+          eas update --branch "${{ steps.branch.outputs.name }}" \
+            --message "$(git log -1 --pretty=%B | head -n 1)" \
+            --non-interactive --json > eas-update-result.json
+          cat eas-update-result.json
+
+      - name: Read project ID from app.json
+        id: project
+        run: |
+          PROJECT_ID=$(node -e "console.log(require('./app.json').expo.extra.manualUpdates.projectId)")
+          echo "id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Report update to manual-updates server
+        env:
+          SERVER_URL: ${{ secrets.MANUAL_UPDATES_SERVER_URL }}
+          API_KEY: ${{ secrets.MANUAL_UPDATES_API_KEY }}
+          PROJECT_ID: ${{ steps.project.outputs.id }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        run: |
+          node -e "
+            const fs = require('fs');
+            const raw = JSON.parse(fs.readFileSync('eas-update-result.json', 'utf8'));
+            const list = Array.isArray(raw) ? raw : (raw.updates || [raw]);
+            const first = list[0] || {};
+            fetch(process.env.SERVER_URL + '/api/updates', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': process.env.API_KEY,
+              },
+              body: JSON.stringify({
+                projectId: process.env.PROJECT_ID,
+                branch: process.env.BRANCH,
+                message: first.message || null,
+                easUpdateGroupId: first.group || first.id || null,
+                runtimeVersion: first.runtimeVersion || null,
+                platforms: list.map((u) => u.platform).filter(Boolean),
+                createdAt: first.createdAt || new Date().toISOString(),
+              }),
+            }).then(async (res) => {
+              if (!res.ok) {
+                console.error(await res.text());
+                process.exit(1);
+              }
+              console.log('Reported update to manual-updates server.');
+            });
+          "

@@ -1,0 +1,31 @@
+{
+  "name": "@lagoapps/expo-updates-manual",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Let users pick and apply a specific EAS Update from a list, persisted across sessions. Includes a GitHub Action that auto-publishes updates and reports them to your central manual-updates server.",
+  "main": "src/client/index.ts",
+  "types": "src/client/index.ts",
+  "files": [
+    "app.plugin.js",
+    "plugin",
+    "src",
+    "scripts",
+    "templates",
+    "README.md"
+  ],
+  "scripts": {
+    "postinstall": "node ./scripts/postinstall.js"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "expo-updates": "*",
+    "expo-constants": "*",
+    "@react-native-async-storage/async-storage": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "dependencies": {
+    "@expo/config-plugins": "^8.0.0"
+  },
+  "license": "MIT"
+}
