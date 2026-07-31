@@ -7,7 +7,7 @@ const pkg = require('../package.json');
  *
  * "plugins": [
  *   ["@lagoapps/expo-updates-manual", {
- *     "apiBaseUrl": "https://your-manual-updates-server.up.railway.app",
+ *     "apiBaseUrl": "https://manual-updates-server.vercel.app",
  *     "projectId": "family-app"
  *   }]
  * ]
