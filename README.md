@@ -20,7 +20,7 @@
 ## התקנה בפרויקט Expo חדש
 
 ```bash
-npm install github:idolago94/expo-updates-manual
+npm install github:lagoapps-dev/expo-updates-manual
 ```
 
 מריץ אוטומטית `postinstall` שמוסיף `.github/workflows/manual-update.yml` לפרויקט (אם אין כבר קובץ כזה).
