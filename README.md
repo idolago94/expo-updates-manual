@@ -32,7 +32,7 @@ npm install github:lagoapps-dev/expo-updates-manual
   "expo": {
     "plugins": [
       ["@lagoapps/expo-updates-manual", {
-        "apiBaseUrl": "https://manual-updates-server.vercel.app",
+        "apiBaseUrl": "https://manual-updates-server.onrender.com",
         "projectId": "family-app"
       }]
     ]
