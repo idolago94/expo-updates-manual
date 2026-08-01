@@ -20,7 +20,7 @@
 ## התקנה בפרויקט Expo חדש
 
 ```bash
-npm install github:lagoapps-dev/expo-updates-manual
+npm install github:idolago94/expo-updates-manual
 ```
 
 מריץ אוטומטית `postinstall` שמוסיף `.github/workflows/manual-update.yml` לפרויקט (אם אין כבר קובץ כזה).
@@ -32,7 +32,7 @@ npm install github:lagoapps-dev/expo-updates-manual
   "expo": {
     "plugins": [
       ["@lagoapps/expo-updates-manual", {
-        "apiBaseUrl": "https://manual-updates-server.onrender.com",
+        "apiBaseUrl": "https://manual-updates-server.vercel.app",
         "projectId": "family-app"
       }]
     ]

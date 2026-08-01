@@ -7,7 +7,7 @@ const pkg = require('../package.json');
  *
  * "plugins": [
  *   ["@lagoapps/expo-updates-manual", {
- *     "apiBaseUrl": "https://manual-updates-server.onrender.com",
+ *     "apiBaseUrl": "https://manual-updates-server.vercel.app",
  *     "projectId": "family-app"
  *   }]
  * ]
