@@ -2,16 +2,17 @@
 /**
  * Runs on `npm install` in the CONSUMING project:
  *  1. Verifies the installed expo / expo-updates versions support the
- *     runtime-override APIs this package relies on (SDK 54+ /
- *     expo-updates 0.29.0+). Fails the install loudly if not.
+ *     runtime-override API this package relies on
+ *     (Updates.setUpdateURLAndRequestHeadersOverride — SDK 52+ /
+ *     expo-updates 0.27.0+). Fails the install loudly if not.
  *  2. Copies the manual-update GitHub Action workflow into
  *     .github/workflows/, if it isn't there yet.
  */
 const fs = require('fs');
 const path = require('path');
 
-const MIN_EXPO_SDK_MAJOR = 54;
-const MIN_EXPO_UPDATES_VERSION = [0, 29, 0];
+const MIN_EXPO_SDK_MAJOR = 52;
+const MIN_EXPO_UPDATES_VERSION = [0, 27, 0];
 
 // process.cwd() during npm install of a dependency is the consumer's
 // project root (not node_modules/<this package>).
@@ -52,7 +53,7 @@ function checkVersions() {
     if (major < MIN_EXPO_SDK_MAJOR) {
       problems.push(
         `Installed Expo SDK is ${expoVersion}, but @lagoapps/expo-updates-manual requires SDK ${MIN_EXPO_SDK_MAJOR}+ ` +
-          '(it relies on Updates.setUpdateRequestHeadersOverride, added in SDK 54).'
+          '(it relies on Updates.setUpdateURLAndRequestHeadersOverride, added in SDK 52).'
       );
     }
   }
@@ -63,7 +64,7 @@ function checkVersions() {
     problems.push(
       `Installed expo-updates is ${updatesVersion}, but ${MIN_EXPO_UPDATES_VERSION.join(
         '.'
-      )}+ is required for the runtime header-override API.`
+      )}+ is required for the runtime update-URL-override API.`
     );
   }
 

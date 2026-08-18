@@ -42,7 +42,13 @@ npm install github:idolago94/expo-updates-manual
 
 `projectId` הוא מזהה ייחודי לפרויקט הזה - חייב להיות זהה בכל הפרויקט (app.json + ה-Action קורא אותו משם).
 
-**חשוב:** צריך build חדש דרך EAS Build אחרי הוספת הפלאגין (השינוי ל-`updates.checkAutomatically` נכנס לבינארי הנטיבי).
+**חשוב:** צריך build חדש דרך EAS Build אחרי הוספת הפלאגין (השינוי ל-`updates.checkAutomatically` ול-
+`updates.disableAntiBrickingMeasures` נכנס לבינארי הנטיבי).
+
+⚠️ **`disableAntiBrickingMeasures: true` מוגדר אוטומטית ע"י הפלאגין** - זה נדרש כדי ש-
+`Updates.setUpdateURLAndRequestHeadersOverride` (ה-API שמאפשר לטעון עדכון ספציפי לפי ID, בלי
+לגעת ב-channel) יעבוד בכלל. המשמעות: מנגנוני ה-rollback הבטוחים של expo-updates כבויים ב-build
+הזה. **אל תשתמש בפלאגין הזה ב-build שמופץ למשתמשי production** - רק ב-preview/internal.
 
 ## שימוש בקוד האפליקציה
 
@@ -52,7 +58,7 @@ npm install github:idolago94/expo-updates-manual
 import { initManualUpdates } from '@lagoapps/expo-updates-manual';
 
 useEffect(() => {
-  initManualUpdates(); // משחזר בחירה שנשמרה מסשן קודם, ומרענן בשקט אם יש חדש יותר על אותו branch
+  initManualUpdates(); // משחזר בחירה שנשמרה מסשן קודם, מוריד ומחיל אותה אם היא לא כבר רצה
 }, []);
 ```
 
@@ -64,7 +70,11 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 <UpdatePickerScreen />
 ```
 
-הבחירה נשמרת ב-AsyncStorage ונטענת מחדש אוטומטית בכל הפעלה, עד שהמשתמש לוחץ "איפוס לגרסת ברירת המחדל" (`resetSelection()`) במסך.
+הבחירה נשמרת ב-AsyncStorage. **חשוב:** `selectAndApplyUpdate`/`resetSelection` לא מרעננים את
+האפליקציה מיידית - לפי התיעוד של Expo, override של `updateUrl` נכנס לתוקף רק בהפעלה מלאה הבאה
+(סגירה מוחלטת ופתיחה מחדש - `Updates.reloadAsync()` לא מספיק). `UpdatePickerScreen` מציג הודעה
+שמבקשת מהמשתמש לסגור ולפתוח את האפליקציה מחדש; רק ב-launch הבא, `initManualUpdates()` בפועל
+מוריד ומחיל את העדכון שנבחר.
 
 ## GitHub Action
 
@@ -94,8 +104,8 @@ git push origin version/1-3-0
 ## בדיקת תאימות אוטומטית בהתקנה
 
 ה-`postinstall` בודק שהגרסאות המותקנות בפועל (`expo`, `expo-updates`) עומדות בדרישת המינימום -
-SDK 54+ ו-expo-updates 0.29.0+ (ה-API של override עדכונים בזמן ריצה). אם לא - `npm install` **נכשל** עם
-הודעת שגיאה ברורה במקום להתקין חבילה שלא תעבוד בשקט.
+SDK 52+ ו-expo-updates 0.27.0+ (`Updates.setUpdateURLAndRequestHeadersOverride`). אם לא -
+`npm install` **נכשל** עם הודעת שגיאה ברורה במקום להתקין חבילה שלא תעבוד בשקט.
 
 ## `projectId` - איך נקבע היום
 
@@ -122,32 +132,39 @@ SDK 54+ ו-expo-updates 0.29.0+ (ה-API של override עדכונים בזמן ר
 
 זה עדיין לא ממומש - הקוד הנוכחי מניח שכל השלבים האלה כבר בוצעו ידנית לפני ההתקנה.
 
-## מה קורה אם עדכון שמופיע ברשימה לא באמת קיים/תואם
+## איך זה עובד בפועל - עדכון ספציפי, לא channel
 
-הבידוד האמיתי בין הפרויקטים שלך לא מגיע מה-`projectId` הפנימי (שהוא סתם שדה סינון בתצוגה) -
-הוא מגיע מ-`updates.url` שאפוי בתוך ה-build הנטיבי (מבוסס `extra.eas.projectId` האמיתי של EAS).
-כלומר גם אם ה-DB "מתבלבל" בין פרויקטים, `checkForUpdateAsync()` תמיד שואל את EAS על האפליקציה
-הנכונה - רק שם ה-channel משתנה.
+מגרסה זו, בחירת עדכון לא עוברת יותר דרך override של `expo-channel-name` (וממילא לא תלויה
+בקיום channel שתואם ל-branch שפורסם - זו הייתה בעיה ידועה: `eas update --branch` יוצר רק
+branch, לא channel, אז כל בחירה נכשלה עם `HTTP response error 404: There is no channel named
+<branch>`). במקום זה, `selectAndApplyUpdate` משתמש ב-
+`Updates.setUpdateURLAndRequestHeadersOverride` כדי להצביע ישירות על העדכון הספציפי שנבחר, לפי
+`easUpdateGroupId` שלו:
 
-הזרימה בפועל ב-`selectAndApplyUpdate`:
-1. שומר את ה-branch הקודם (מה-storage), למקרה שיהיה צריך לחזור אליו
-2. מגדיר את ה-header override ל-branch החדש
-3. `checkForUpdateAsync()` - אם ה-branch לא קיים בפרויקט הזה, או שגרסת ה-runtime לא תואמת ל-build
-   הנוכחי, EAS פשוט מחזיר `isAvailable: false` (לא זורק שגיאה)
-4. אם אין עדכון זמין - **זורק שגיאה, ומחזיר את ה-header override למצב הקודם** לפני שהשגיאה
-   מגיעה ל-UI, כדי שלא יישאר "תקוע" מכוון ל-branch שגוי לשאר הסשן
-5. שום `fetchUpdateAsync`/`reloadAsync`/`AsyncStorage.setItem` לא רץ - האפליקציה ממשיכה על
-   הגרסה הנוכחית שלה בלי שינוי, והמשתמש רואה הודעת שגיאה במסך הבחירה
+```
+https://u.expo.dev/<EAS project ID>/group/<easUpdateGroupId>
+```
 
-באותה רוח, `initManualUpdates()` (שרץ אוטומטית ב-launch על בחירה שמורה) עוטף את הבדיקה ב-try/catch
-משלו: אם הבדיקה נכשלת (branch לא קיים יותר, אין רשת וכו') - רק מדפיס אזהרה וממשיך להריץ את מה
-שכבר מותקן, בלי לנסות שוב עד ה-launch הבא.
+זה API "כבד" יותר מה-header-override הישן: הוא דורש `updates.disableAntiBrickingMeasures: true`
+(ראה סעיף ההגדרה למעלה), ולכן מיועד ל-preview builds בלבד. חשוב גם: ה-override הזה נכנס לתוקף
+רק בהפעלה מלאה הבאה של האפליקציה - `selectAndApplyUpdate`/`resetSelection` רק מגדירים אותו
+ושומרים את הבחירה ב-storage; הם **לא** מורידים או מחילים כלום בעצמם. `initManualUpdates()`,
+שרץ ב-launch הבא, הוא זה שבפועל מריץ `checkForUpdateAsync` → `fetchUpdateAsync` →
+`reloadAsync` (רענון פנימי של ה-JS bundle בתוך אותו launch, אחרי שהעדכון כבר ירד).
+
+אם העדכון שנבחר כבר לא קיים (נמחק, אי-התאמת runtime, אין רשת) - `initManualUpdates()` תופס
+את זה ב-try/catch, מדפיס אזהרה, **מנקה את הבחירה השמורה ומאפס את ה-override** (במקום להישאר
+תקוע מנסה שוב כל launch), וממשיך להריץ את מה שכבר מותקן. השגיאה לא מגיעה למסך הבחירה באותו
+רגע - היא תופיע רק כ-warning בקונסול בהפעלה הבאה.
 
 ## הערות
 
-- `Updates.setUpdateRequestHeadersOverride` היא API חדשה יחסית (SDK 54 / expo-updates 0.29.0+) —
-  ודא תאימות גרסה בכל פרויקט.
+- `Updates.setUpdateURLAndRequestHeadersOverride` היא API יחסית חדש (SDK 52+ / expo-updates
+  0.27.0+) - ודא תאימות גרסה בכל פרויקט.
+- ⚠️ דורש `updates.disableAntiBrickingMeasures: true`, שמכבה את מנגנוני ה-rollback הבטוחים של
+  expo-updates. **preview/internal בלבד - אף פעם לא ב-build שמופץ ל-production.**
 - שדות ה-JSON המדויקים שמחזיר `eas update --json` (למשל `group`/`id`) כדאי לוודא מול הפלט האמיתי
-  אצלך בגרסת ה-eas-cli הנוכחית ולהתאים ב-`templates/github-workflow/manual-update.yml` אם צריך.
-- `initManualUpdates()` מבצע קריאת רשת בכל הפעלה (כדי לבדוק אם יש חדש יותר על אותו branch) —
-  אם תרצה למזער את זה, אפשר להוסיף cache/tteest זמן בין בדיקות.
+  אצלך בגרסת ה-eas-cli הנוכחית ולהתאים ב-`templates/github-workflow/manual-update.yml` אם צריך -
+  `easUpdateGroupId` (השדה ש-`selectAndApplyUpdate` בפועל צריך) ממופה משם.
+- אחרי בחירה/איפוס אין רענון אוטומטי מיידי - ה-UI צריך להנחות את המשתמש לסגור ולפתוח מחדש את
+  האפליקציה.
