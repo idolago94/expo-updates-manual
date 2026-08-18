@@ -6,16 +6,22 @@
 ## איך זה מתחבר
 
 ```
-[Git branch version/*]
-        │  push/commit
+[Git tag update:<channel>:<label>]
+        │  git push origin <tag>
         ▼
-[GitHub Action] ──eas update──▶ [EAS servers]
+[GitHub Action] ──eas update --branch <channel> --environment <channel>──▶ [EAS servers]
         │
-        └──POST /api/updates──▶ [manual-updates-server + MongoDB]
+        └──POST /api/updates (projectId, environment, label, ...)──▶ [manual-updates-server + MongoDB]
                                           ▲
-                                          │  GET /api/updates?projectId=X
+                                          │  GET /api/updates?projectId=X&environment=<Updates.channel>
                                    [האפליקציה שלך]
 ```
+
+ה-`channel` בתג הוא גם ה-branch שה-update מתפרסם אליו ב-EAS, גם ה-environment שממנו
+`eas update` שואב את משתני ה-`EXPO_PUBLIC_*`, וגם המסנן שלפיו האפליקציה מבקשת מה-server את
+הרשימה (לפי `Updates.channel` הנוכחי שלה - ראה `updates.channel` ב-`eas.json` לכל build profile).
+זה בכוונה: **build של production תמיד יראה, ויוכל לבחור, רק עדכונים שפורסמו תחת environment
+`production`** - אין תרחיש שבו production "מקבל בטעות" משתני סביבה או קונפיג של preview.
 
 ## התקנה בפרויקט Expo חדש
 
@@ -78,21 +84,31 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 
 ## GitHub Action
 
-נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. רץ בכל push לבראנץ' `version/**` (או ביצירת בראנץ' כזה):
-1. מריץ `eas update --branch <שם הבראנץ'>`
-2. קורא את ה-`projectId` מ-`app.json`
-3. שולח POST ל-`manual-updates-server` עם פרטי העדכון
+נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. רץ על כל push של תג בצורה
+`update:<channel>:<label>` (למשל `update:preview:1-3-0` או `update:production:2-0-0`):
+1. מפרק את התג ל-`channel` (=`environment`) ו-`label`
+2. מריץ `eas update --branch <channel> --environment <channel>` - ה-channel קובע גם
+   לאיזה EAS branch מתפרסם וגם מאיזה EAS environment נשאבים משתני `EXPO_PUBLIC_*`
+3. קורא את ה-`projectId` מ-`app.json`
+4. שולח POST ל-`manual-updates-server` עם `projectId`, `environment`, `label` ופרטי העדכון
+
+**חשוב על `--environment`:** בלי הדגל הזה, `eas update` לא מושך משתני סביבה מ-EAS (כמו ש-
+`eas build` עושה) - הוא רק קורא קבצי `.env` מקומיים, שבד"כ לא קיימים בכלל ב-checkout של ה-CI
+(gitignored). התוצאה: כל משתנה `EXPO_PUBLIC_*` נכנס לבאנדל כ-`undefined` ממש, וזה מתפוצץ רק
+בזמן ריצה אחרי שמישהו בוחר את העדכון.
 
 צריך להגדיר ב-repo (Settings → Secrets and variables → Actions):
 - `EXPO_TOKEN`
 - `MANUAL_UPDATES_SERVER_URL`
 - `MANUAL_UPDATES_API_KEY`
 
+וודא שקיים ב-EAS environment בשם תואם לכל `channel` שבו אתה משתמש בתגיות (למשל `preview`,
+`production`) עם משתני `EXPO_PUBLIC_*` הרלוונטיים - `eas env:list --environment preview`.
+
 לפרסום עדכון חדש שיופיע ברשימה למשתמש:
 ```bash
-git checkout -b version/1-3-0
-git commit -am "תיאור השינוי"
-git push origin version/1-3-0
+git tag update:preview:1-3-0
+git push origin update:preview:1-3-0
 ```
 
 ## דרישות מוקדמות (לא מותקנות אוטומטית)

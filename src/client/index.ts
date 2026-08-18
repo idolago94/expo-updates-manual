@@ -3,7 +3,13 @@ import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export type ManualUpdateInfo = {
-  branch: string;
+  /**
+   * The EAS environment this update was published for (e.g. "preview",
+   * "production") — the part before the `/` in the publish tag
+   * (`<environment>/<label>`). Also the EAS branch it was published to.
+   */
+  environment: string;
+  /** The part after the `/` in the publish tag, e.g. "1-3-0". */
   label: string;
   /** The EAS update group ID for this specific publish (`group`/`id` from `eas update --json`). */
   easUpdateGroupId: string;
@@ -47,10 +53,25 @@ function updateUrlFor(easUpdateGroupId: string): string {
   return `https://u.expo.dev/${getEasProjectId()}/group/${easUpdateGroupId}`;
 }
 
-/** Fetches the list of selectable updates for this project from your central server. */
+/**
+ * Fetches the list of selectable updates for this project from your central
+ * server, filtered to the CURRENT build's own environment (Updates.channel —
+ * e.g. "preview" or "production", set at build time via eas.json and never
+ * overridden by this package). A production build only ever sees, and can
+ * only ever select, updates published under the "production" environment
+ * — it cannot be pointed at a preview update's config by mistake.
+ */
 export async function listAvailableUpdates(): Promise<ManualUpdateInfo[]> {
   const { apiBaseUrl, projectId } = getConfig();
-  const res = await fetch(`${apiBaseUrl}/api/updates?projectId=${encodeURIComponent(projectId)}`);
+  const environment = Updates.channel;
+  if (!environment) {
+    throw new Error(
+      '[expo-updates-manual] Updates.channel is empty — cannot determine which environment to list updates for.'
+    );
+  }
+  const res = await fetch(
+    `${apiBaseUrl}/api/updates?projectId=${encodeURIComponent(projectId)}&environment=${encodeURIComponent(environment)}`
+  );
   if (!res.ok) {
     throw new Error(`[expo-updates-manual] Failed to fetch updates list: ${res.status}`);
   }

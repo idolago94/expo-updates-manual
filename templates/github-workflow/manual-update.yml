@@ -1,17 +1,21 @@
 name: Publish EAS Update (manual selection)
 
-# Runs on every commit to a version/* branch, and when such a branch is
-# first created (covers the "eas update --auto" style flow, just gated
-# to branches instead of running on every push everywhere).
+# Runs on tags shaped like update:<channel>:<label>, e.g.
+# "update:preview:1-3-0" or "update:production:2-0-0". The channel
+# segment is used both as the EAS branch updates are published to AND
+# as the EAS environment whose EXPO_PUBLIC_* variables get baked into
+# the bundle - so a "preview" tag always gets preview config, and a
+# "production" tag always gets production config. It also becomes the
+# value apps filter the update list by (see listAvailableUpdates() in
+# the client), so an app running a "production" build never sees, and
+# can never select, an update published under a different channel.
 on:
   push:
-    branches:
-      - 'version/**'
-  create:
+    tags:
+      - 'update:*:*'
 
 jobs:
   publish-update:
-    if: github.ref_type == 'branch' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,13 +33,30 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Extract branch name
-        id: branch
-        run: echo "name=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
+      - name: Extract environment and label from tag
+        id: tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          PREFIX="${TAG%%:*}"
+          REST="${TAG#*:}"
+          ENVIRONMENT="${REST%%:*}"
+          LABEL="${REST#*:}"
+          if [ "$PREFIX" != "update" ] || [ -z "$ENVIRONMENT" ] || [ -z "$LABEL" ] || [ "$ENVIRONMENT" = "$REST" ]; then
+            echo "Tag '$TAG' is not shaped like update:<channel>:<label> - skipping." >&2
+            exit 1
+          fi
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
 
       - name: Publish EAS Update
+        # --environment makes `eas update` pull that EAS environment's
+        # EXPO_PUBLIC_* (and other) variables into the bundle - the same
+        # way `eas build` does. Without it, `eas update` only reads local
+        # .env files, which don't exist in this checkout (gitignored), so
+        # every EXPO_PUBLIC_* var would get inlined as literally undefined.
         run: |
-          eas update --branch "${{ steps.branch.outputs.name }}" \
+          eas update --branch "${{ steps.tag.outputs.environment }}" \
+            --environment "${{ steps.tag.outputs.environment }}" \
             --message "$(git log -1 --pretty=%B | head -n 1)" \
             --non-interactive --json > eas-update-result.json
           cat eas-update-result.json
@@ -51,7 +72,8 @@ jobs:
           SERVER_URL: ${{ secrets.MANUAL_UPDATES_SERVER_URL }}
           API_KEY: ${{ secrets.MANUAL_UPDATES_API_KEY }}
           PROJECT_ID: ${{ steps.project.outputs.id }}
-          BRANCH: ${{ steps.branch.outputs.name }}
+          ENVIRONMENT: ${{ steps.tag.outputs.environment }}
+          LABEL: ${{ steps.tag.outputs.label }}
         run: |
           node -e "
             const fs = require('fs');
@@ -66,7 +88,8 @@ jobs:
               },
               body: JSON.stringify({
                 projectId: process.env.PROJECT_ID,
-                branch: process.env.BRANCH,
+                environment: process.env.ENVIRONMENT,
+                label: process.env.LABEL,
                 message: first.message || null,
                 easUpdateGroupId: first.group || first.id || null,
                 runtimeVersion: first.runtimeVersion || null,
