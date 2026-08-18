@@ -79,14 +79,22 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 ## GitHub Action
 
 נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. רץ בכל push לבראנץ' `version/**` (או ביצירת בראנץ' כזה):
-1. מריץ `eas update --branch <שם הבראנץ'>`
+1. מריץ `eas update --branch <שם הבראנץ'> --environment <EAS_UPDATE_ENVIRONMENT>`
 2. קורא את ה-`projectId` מ-`app.json`
 3. שולח POST ל-`manual-updates-server` עם פרטי העדכון
+
+**חשוב על `--environment`:** בלי הדגל הזה, `eas update` לא מושך משתני סביבה מ-EAS (כמו ש-
+`eas build` עושה) - הוא רק קורא קבצי `.env` מקומיים, שבד"כ לא קיימים בכלל ב-checkout של ה-CI
+(gitignored). התוצאה: כל משתנה `EXPO_PUBLIC_*` נכנס לבאנדל כ-`undefined` ממש, וזה מתפוצץ רק
+בזמן ריצה אחרי שמישהו בוחר את העדכון. ברירת המחדל היא `preview` - אם ה-environment הרלוונטי
+ב-EAS אצלך נקרא אחרת, הגדר משתנה repo/org בשם `EAS_UPDATE_ENVIRONMENT`
+(Settings → Secrets and variables → Actions → Variables).
 
 צריך להגדיר ב-repo (Settings → Secrets and variables → Actions):
 - `EXPO_TOKEN`
 - `MANUAL_UPDATES_SERVER_URL`
 - `MANUAL_UPDATES_API_KEY`
+- `EAS_UPDATE_ENVIRONMENT` (Variable, לא Secret) - אופציונלי, ברירת מחדל `preview`
 
 לפרסום עדכון חדש שיופיע ברשימה למשתמש:
 ```bash

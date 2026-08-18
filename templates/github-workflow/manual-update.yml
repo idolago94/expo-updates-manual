@@ -34,8 +34,19 @@ jobs:
         run: echo "name=${GITHUB_REF#refs/heads/}" >> "$GITHUB_OUTPUT"
 
       - name: Publish EAS Update
+        env:
+          # --environment is required for `eas update` to pull EAS-hosted
+          # EXPO_PUBLIC_* (and other) environment variables into the bundle.
+          # Without it, `eas update` only reads local .env files, which
+          # don't exist in this checkout (they're normally gitignored) -
+          # so EXPO_PUBLIC_* vars get inlined as literally undefined.
+          # Override via a repo/org variable (Settings > Secrets and
+          # variables > Actions > Variables) named EAS_UPDATE_ENVIRONMENT
+          # if your project's EAS environment for this flow isn't "preview".
+          EAS_UPDATE_ENVIRONMENT: ${{ vars.EAS_UPDATE_ENVIRONMENT || 'preview' }}
         run: |
           eas update --branch "${{ steps.branch.outputs.name }}" \
+            --environment "$EAS_UPDATE_ENVIRONMENT" \
             --message "$(git log -1 --pretty=%B | head -n 1)" \
             --non-interactive --json > eas-update-result.json
           cat eas-update-result.json
