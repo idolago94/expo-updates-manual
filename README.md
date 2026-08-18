@@ -19,9 +19,16 @@
 
 ה-`channel` בתג הוא גם ה-branch שה-update מתפרסם אליו ב-EAS, גם ה-environment שממנו
 `eas update` שואב את משתני ה-`EXPO_PUBLIC_*`, וגם המסנן שלפיו האפליקציה מבקשת מה-server את
-הרשימה (לפי `Updates.channel` הנוכחי שלה - ראה `updates.channel` ב-`eas.json` לכל build profile).
-זה בכוונה: **build של production תמיד יראה, ויוכל לבחור, רק עדכונים שפורסמו תחת environment
-`production`** - אין תרחיש שבו production "מקבל בטעות" משתני סביבה או קונפיג של preview.
+הרשימה. זה בכוונה: **build של production תמיד יראה, ויוכל לבחור, רק עדכונים שפורסמו תחת
+environment `production`** - אין תרחיש שבו production "מקבל בטעות" משתני סביבה או קונפיג של
+preview.
+
+**חשוב לגבי המסנן בפועל:** `Updates.channel` משקף את ה-update שרץ *כרגע*, לא את ה-build. ברגע
+שעדכון שנבחר ידנית רץ (נטען ישירות לפי `easUpdateGroupId`, בלי resolution דרך channel), אין לו
+channel בכלל וה-`Updates.channel` חוזר ריק. לכן `listAvailableUpdates()` לא קורא ל-`Updates.channel`
+ישירות - הוא שומר ב-storage את הערך האמיתי הראשון שראה (לפני שנבחר עדכון ידני אי-פעם, או מיד
+אחרי `resetSelection()`) ומשתמש בו כ-fallback כל פעם שה-`Updates.channel` החי ריק. ראה
+`getHomeEnvironment()` ב-`src/client/index.ts`.
 
 ## התקנה בפרויקט Expo חדש
 
@@ -168,10 +175,18 @@ https://u.expo.dev/<EAS project ID>/group/<easUpdateGroupId>
 שרץ ב-launch הבא, הוא זה שבפועל מריץ `checkForUpdateAsync` → `fetchUpdateAsync` →
 `reloadAsync` (רענון פנימי של ה-JS bundle בתוך אותו launch, אחרי שהעדכון כבר ירד).
 
-אם העדכון שנבחר כבר לא קיים (נמחק, אי-התאמת runtime, אין רשת) - `initManualUpdates()` תופס
-את זה ב-try/catch, מדפיס אזהרה, **מנקה את הבחירה השמורה ומאפס את ה-override** (במקום להישאר
-תקוע מנסה שוב כל launch), וממשיך להריץ את מה שכבר מותקן. השגיאה לא מגיעה למסך הבחירה באותו
-רגע - היא תופיע רק כ-warning בקונסול בהפעלה הבאה.
+חשוב: `checkForUpdateAsync().isAvailable === false` **לא** נחשב שגיאה - כתובת `group/<id>` היא
+manifest קבוע, אז ברגע שהעדכון שנבחר כבר רץ זה בדיוק המצב הצפוי (אין שום דבר "חדש יותר" באותה
+כתובת, לעולם). זה קרה בפועל: גרסה מוקדמת של הקוד טעתה בדיוק כאן וזרקה שגיאה על `!isAvailable`,
+מה שגרם לבחירה להתאפס אוטומטית בכל launch שני (`initManualUpdates()` ראה "אין עדכון זמין" וחשב
+שזו כשל, ניקה את ה-selection וחזר לברירת המחדל). `initManualUpdates()` היום פשוט לא עושה כלום
+כש-`isAvailable` הוא `false` - זה "אני כבר על הגרסה הנכונה", לא כשל.
+
+אם העדכון שנבחר באמת כבר לא קיים (נמחק, אי-התאמת runtime, אין רשת) - זה מתבטא כ-**exception**
+שנזרק מתוך `checkForUpdateAsync`/`fetchUpdateAsync` עצמם (לא כ-`isAvailable: false`).
+`initManualUpdates()` תופס את זה ב-try/catch, מדפיס אזהרה, **מנקה את הבחירה השמורה ומאפס את
+ה-override** (במקום להישאר תקוע מנסה שוב כל launch), וממשיך להריץ את מה שכבר מותקן. השגיאה לא
+מגיעה למסך הבחירה באותו רגע - היא תופיע רק כ-warning בקונסול בהפעלה הבאה.
 
 ## הערות
 
