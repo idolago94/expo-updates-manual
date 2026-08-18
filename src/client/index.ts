@@ -5,11 +5,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export type ManualUpdateInfo = {
   branch: string;
   label: string;
+  /** The EAS update group ID for this specific publish (`group`/`id` from `eas update --json`). */
+  easUpdateGroupId: string;
   message?: string | null;
   createdAt?: string | null;
 };
 
-const STORAGE_PREFIX = '@lagoapps/expo-updates-manual/selected-branch/';
+const STORAGE_PREFIX = '@lagoapps/expo-updates-manual/selected-update/';
 
 function getConfig(): { apiBaseUrl: string; projectId: string } {
   const cfg = Constants.expoConfig?.extra?.manualUpdates;
@@ -21,8 +23,28 @@ function getConfig(): { apiBaseUrl: string; projectId: string } {
   return cfg;
 }
 
+/**
+ * The real EAS project ID (the UUID EAS generates, under `extra.eas.projectId`
+ * — set automatically by `eas init` / `eas update:configure`). This is a
+ * different value from this package's own `projectId` plugin option, which
+ * is just a display-filtering key against your manual-updates server.
+ */
+function getEasProjectId(): string {
+  const id = Constants.expoConfig?.extra?.eas?.projectId;
+  if (!id) {
+    throw new Error(
+      '[expo-updates-manual] extra.eas.projectId not found. Run `eas init` / `eas update:configure`.'
+    );
+  }
+  return id;
+}
+
 function storageKey(projectId: string) {
   return `${STORAGE_PREFIX}${projectId}`;
+}
+
+function updateUrlFor(easUpdateGroupId: string): string {
+  return `https://u.expo.dev/${getEasProjectId()}/group/${easUpdateGroupId}`;
 }
 
 /** Fetches the list of selectable updates for this project from your central server. */
@@ -36,14 +58,29 @@ export async function listAvailableUpdates(): Promise<ManualUpdateInfo[]> {
 }
 
 /**
- * Points the app at the chosen branch, downloads its latest compatible
- * update, reloads the app to run it, and persists the choice so it
- * survives app restarts (until resetSelection() is called).
+ * Points the app at one specific, already-published update (by its EAS
+ * update group ID) and persists the choice so it's picked up automatically
+ * on the next app launch (until resetSelection() is called).
  *
- * NOTE: setUpdateRequestHeadersOverride is a newer expo-updates API
- * (SDK 54 / expo-updates 0.29.0+). Verify against your installed version.
+ * This targets that exact update directly via
+ * Updates.setUpdateURLAndRequestHeadersOverride — it never touches the
+ * app's build-time channel, so a bad or missing channel can no longer
+ * break selection the way it used to.
+ *
+ * IMPORTANT: per Expo's docs this override only takes effect on the next
+ * full app launch — a plain Updates.reloadAsync() will NOT pick it up.
+ * This function therefore only sets the override and persists the choice;
+ * it does not download or apply anything itself (initManualUpdates() does
+ * that on the next cold start). Your UI must tell the user to fully close
+ * and reopen the app after calling this — do not expect an immediate
+ * in-app reload.
+ *
+ * Requires `updates.disableAntiBrickingMeasures: true` in app config (set
+ * automatically by this package's config plugin) plus a native rebuild —
+ * this is a preview-only capability that must never ship in a production
+ * build, since it disables expo-updates' safe-rollback protections.
  */
-export async function selectAndApplyUpdate(branch: string): Promise<void> {
+export async function selectAndApplyUpdate(update: ManualUpdateInfo): Promise<void> {
   const { projectId } = getConfig();
 
   if (__DEV__) {
@@ -51,81 +88,70 @@ export async function selectAndApplyUpdate(branch: string): Promise<void> {
     return;
   }
 
-  // Remember what was running before, so a failed attempt can revert
-  // cleanly instead of leaving the runtime header pointed at a branch
-  // that turned out not to exist / not to apply to this build.
-  const previousBranch = await AsyncStorage.getItem(storageKey(projectId));
-
-  await Updates.setUpdateRequestHeadersOverride({ 'expo-channel-name': branch });
-
-  try {
-    const check = await Updates.checkForUpdateAsync();
-    if (!check.isAvailable) {
-      throw new Error(
-        `[expo-updates-manual] No update available on branch "${branch}". ` +
-          'It may not exist for this app, or its runtime version may not match this build.'
-      );
-    }
-
-    await Updates.fetchUpdateAsync();
-    await AsyncStorage.setItem(storageKey(projectId), branch);
-    await Updates.reloadAsync();
-  } catch (err) {
-    // Roll back the runtime override so the app isn't left mid-session
-    // pointed at a branch that doesn't resolve to anything. The native
-    // API only accepts string header values (or `null` for the whole
-    // argument to clear all overrides) — a header value of `null` isn't
-    // valid and throws.
-    await Updates.setUpdateRequestHeadersOverride(
-      previousBranch ? { 'expo-channel-name': previousBranch } : null
-    );
-    throw err;
-  }
+  await Updates.setUpdateURLAndRequestHeadersOverride({
+    updateUrl: updateUrlFor(update.easUpdateGroupId),
+    requestHeaders: {},
+  });
+  await AsyncStorage.setItem(storageKey(projectId), update.easUpdateGroupId);
 }
 
 /**
  * Call once, early at app startup (e.g. top of App.tsx, before rendering
  * anything that depends on the update being current). Re-applies a
- * previously persisted branch selection so it survives a cold start,
- * and — if a newer update was published on that same branch since last
- * time — silently fetches and applies it too.
+ * previously persisted update-group selection, then downloads and applies
+ * it if it isn't already running.
+ *
+ * This is the point where a selection made via selectAndApplyUpdate() in
+ * the previous session actually gets fetched and applied — the override
+ * it sets only takes effect starting with this next cold start.
  *
  * Safe to call every launch: it's a no-op if nothing was ever selected.
+ * If the selected update no longer resolves (deleted upstream, runtime
+ * version mismatch, offline), it logs a warning, clears the selection,
+ * and leaves the app running whatever is currently installed — it never
+ * retries a dead selection indefinitely.
  */
 export async function initManualUpdates(): Promise<void> {
   if (__DEV__) return;
 
   const { projectId } = getConfig();
-  const savedBranch = await AsyncStorage.getItem(storageKey(projectId));
-  if (!savedBranch) return;
+  const savedGroupId = await AsyncStorage.getItem(storageKey(projectId));
+  if (!savedGroupId) return;
 
-  await Updates.setUpdateRequestHeadersOverride({ 'expo-channel-name': savedBranch });
+  await Updates.setUpdateURLAndRequestHeadersOverride({
+    updateUrl: updateUrlFor(savedGroupId),
+    requestHeaders: {},
+  });
 
   try {
     const check = await Updates.checkForUpdateAsync();
-    if (check.isAvailable) {
-      const fetchResult = await Updates.fetchUpdateAsync();
-      if (fetchResult.isNew) {
-        await Updates.reloadAsync();
-      }
+    if (!check.isAvailable) {
+      throw new Error(`[expo-updates-manual] Selected update "${savedGroupId}" is no longer available.`);
+    }
+
+    const fetchResult = await Updates.fetchUpdateAsync();
+    if (fetchResult.isNew) {
+      await Updates.reloadAsync();
     }
   } catch (e) {
-    // Offline or server unreachable at launch — keep running the
-    // currently embedded/cached update, try again next launch.
-    console.warn('[expo-updates-manual] initManualUpdates check failed:', e);
+    // The selected update no longer resolves — fall back to the build's
+    // default update source rather than getting stuck on a dead override
+    // every future launch.
+    console.warn('[expo-updates-manual] initManualUpdates check failed, reverting to default:', e);
+    await AsyncStorage.removeItem(storageKey(projectId));
+    await Updates.setUpdateURLAndRequestHeadersOverride(null);
   }
 }
 
-/** Clears the persisted selection and reverts to the build's default channel. */
+/**
+ * Clears the persisted selection and reverts to the build's default
+ * update URL/channel. Like selectAndApplyUpdate(), this only takes effect
+ * on the next full app launch — tell the user to close and reopen the app.
+ */
 export async function resetSelection(): Promise<void> {
   const { projectId } = getConfig();
   await AsyncStorage.removeItem(storageKey(projectId));
-  // Passing null for the whole argument un-sets all header overrides.
-  // A header *value* of null isn't valid and throws — the native side
-  // requires a `[String: String]?` (a map of string to string, or no map
-  // at all), not a map containing a null value.
-  await Updates.setUpdateRequestHeadersOverride(null);
-  await Updates.reloadAsync();
+  await Updates.setUpdateURLAndRequestHeadersOverride(null);
 }
 
 /** Info about the update currently running, for display in your UI. */
@@ -137,7 +163,8 @@ export function getCurrentUpdateInfo() {
   };
 }
 
-export async function getPersistedBranch(): Promise<string | null> {
+/** The EAS update group ID of the currently persisted selection, if any. */
+export async function getPersistedUpdateGroupId(): Promise<string | null> {
   const { projectId } = getConfig();
   return AsyncStorage.getItem(storageKey(projectId));
 }

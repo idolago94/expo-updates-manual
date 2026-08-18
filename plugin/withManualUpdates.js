@@ -18,7 +18,13 @@ const pkg = require('../package.json');
  * This plugin:
  * 1. Sets `updates.checkAutomatically` to "NEVER" — expo-updates never silently
  *    checks/applies updates on its own; this package controls that explicitly.
- * 2. Stores apiBaseUrl + projectId under `extra.manualUpdates` so client code
+ * 2. Sets `updates.disableAntiBrickingMeasures` to `true` — required by
+ *    Updates.setUpdateURLAndRequestHeadersOverride(), which selectAndApplyUpdate()
+ *    uses to load one specific update by ID, bypassing channels entirely.
+ *    ⚠️ This disables expo-updates' safe-rollback protections app-wide for
+ *    this build. Only ship builds with this plugin applied to preview/internal
+ *    distribution — never to production users.
+ * 3. Stores apiBaseUrl + projectId under `extra.manualUpdates` so client code
  *    can read them at runtime via Constants.expoConfig.extra.
  */
 function withManualUpdates(config, options = {}) {
@@ -38,6 +44,7 @@ function withManualUpdates(config, options = {}) {
   config.updates = {
     ...config.updates,
     checkAutomatically: 'NEVER',
+    disableAntiBrickingMeasures: true,
   };
 
   config.extra = {

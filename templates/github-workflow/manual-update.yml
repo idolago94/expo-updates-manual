@@ -40,17 +40,6 @@ jobs:
             --non-interactive --json > eas-update-result.json
           cat eas-update-result.json
 
-      # setUpdateRequestHeadersOverride resolves updates by CHANNEL
-      # (expo-channel-name), not by branch. `eas update --branch` only
-      # creates/publishes to a branch, so without a same-named channel
-      # linked to it, selecting this branch in the app fails with
-      # "There is no channel named <branch> for the app with ID: ...".
-      - name: Ensure a channel is linked to the branch
-        run: |
-          eas channel:create "${{ steps.branch.outputs.name }}" --non-interactive || true
-          eas channel:edit "${{ steps.branch.outputs.name }}" \
-            --branch "${{ steps.branch.outputs.name }}" --non-interactive
-
       - name: Read project ID from app.json
         id: project
         run: |
