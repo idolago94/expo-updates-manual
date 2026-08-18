@@ -88,7 +88,7 @@ export async function selectAndApplyUpdate(update: ManualUpdateInfo): Promise<vo
     return;
   }
 
-  await Updates.setUpdateURLAndRequestHeadersOverride({
+  Updates.setUpdateURLAndRequestHeadersOverride({
     updateUrl: updateUrlFor(update.easUpdateGroupId),
     requestHeaders: {},
   });
@@ -118,7 +118,7 @@ export async function initManualUpdates(): Promise<void> {
   const savedGroupId = await AsyncStorage.getItem(storageKey(projectId));
   if (!savedGroupId) return;
 
-  await Updates.setUpdateURLAndRequestHeadersOverride({
+  Updates.setUpdateURLAndRequestHeadersOverride({
     updateUrl: updateUrlFor(savedGroupId),
     requestHeaders: {},
   });
@@ -139,7 +139,7 @@ export async function initManualUpdates(): Promise<void> {
     // every future launch.
     console.warn('[expo-updates-manual] initManualUpdates check failed, reverting to default:', e);
     await AsyncStorage.removeItem(storageKey(projectId));
-    await Updates.setUpdateURLAndRequestHeadersOverride(null);
+    Updates.setUpdateURLAndRequestHeadersOverride(null);
   }
 }
 
@@ -151,7 +151,7 @@ export async function initManualUpdates(): Promise<void> {
 export async function resetSelection(): Promise<void> {
   const { projectId } = getConfig();
   await AsyncStorage.removeItem(storageKey(projectId));
-  await Updates.setUpdateURLAndRequestHeadersOverride(null);
+  Updates.setUpdateURLAndRequestHeadersOverride(null);
 }
 
 /** Info about the update currently running, for display in your UI. */
