@@ -72,10 +72,13 @@ export async function selectAndApplyUpdate(branch: string): Promise<void> {
     await Updates.reloadAsync();
   } catch (err) {
     // Roll back the runtime override so the app isn't left mid-session
-    // pointed at a branch that doesn't resolve to anything.
-    await Updates.setUpdateRequestHeadersOverride({
-      'expo-channel-name': previousBranch ?? (null as any),
-    });
+    // pointed at a branch that doesn't resolve to anything. The native
+    // API only accepts string header values (or `null` for the whole
+    // argument to clear all overrides) — a header value of `null` isn't
+    // valid and throws.
+    await Updates.setUpdateRequestHeadersOverride(
+      previousBranch ? { 'expo-channel-name': previousBranch } : null
+    );
     throw err;
   }
 }
@@ -117,8 +120,11 @@ export async function initManualUpdates(): Promise<void> {
 export async function resetSelection(): Promise<void> {
   const { projectId } = getConfig();
   await AsyncStorage.removeItem(storageKey(projectId));
-  // Passing null un-sets the header override, per expo-updates docs convention.
-  await Updates.setUpdateRequestHeadersOverride({ 'expo-channel-name': null as any });
+  // Passing null for the whole argument un-sets all header overrides.
+  // A header *value* of null isn't valid and throws — the native side
+  // requires a `[String: String]?` (a map of string to string, or no map
+  // at all), not a map containing a null value.
+  await Updates.setUpdateRequestHeadersOverride(null);
   await Updates.reloadAsync();
 }
 
