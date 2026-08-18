@@ -1,18 +1,20 @@
 name: Publish EAS Update (manual selection)
 
-# Runs on tags shaped like update:<channel>:<label>, e.g.
-# "update:preview:1-3-0" or "update:production:2-0-0". The channel
-# segment is used both as the EAS branch updates are published to AND
-# as the EAS environment whose EXPO_PUBLIC_* variables get baked into
-# the bundle - so a "preview" tag always gets preview config, and a
-# "production" tag always gets production config. It also becomes the
-# value apps filter the update list by (see listAvailableUpdates() in
-# the client), so an app running a "production" build never sees, and
-# can never select, an update published under a different channel.
+# Runs on tags shaped like update/<channel>/<label>, e.g.
+# "update/preview/1-3-0" or "update/production/2-0-0" (":" is not a
+# valid character in a git ref name, so "/" separates the segments).
+# The channel segment is used both as the EAS branch updates are
+# published to AND as the EAS environment whose EXPO_PUBLIC_* variables
+# get baked into the bundle - so a "preview" tag always gets preview
+# config, and a "production" tag always gets production config. It
+# also becomes the value apps filter the update list by (see
+# listAvailableUpdates() in the client), so an app running a
+# "production" build never sees, and can never select, an update
+# published under a different channel.
 on:
   push:
     tags:
-      - 'update:*:*'
+      - 'update/**'
 
 jobs:
   publish-update:
@@ -37,12 +39,12 @@ jobs:
         id: tag
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
-          PREFIX="${TAG%%:*}"
-          REST="${TAG#*:}"
-          ENVIRONMENT="${REST%%:*}"
-          LABEL="${REST#*:}"
+          PREFIX="${TAG%%/*}"
+          REST="${TAG#*/}"
+          ENVIRONMENT="${REST%%/*}"
+          LABEL="${REST#*/}"
           if [ "$PREFIX" != "update" ] || [ -z "$ENVIRONMENT" ] || [ -z "$LABEL" ] || [ "$ENVIRONMENT" = "$REST" ]; then
-            echo "Tag '$TAG' is not shaped like update:<channel>:<label> - skipping." >&2
+            echo "Tag '$TAG' is not shaped like update/<channel>/<label> - skipping." >&2
             exit 1
           fi
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"

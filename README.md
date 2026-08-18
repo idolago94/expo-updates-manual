@@ -6,7 +6,7 @@
 ## איך זה מתחבר
 
 ```
-[Git tag update:<channel>:<label>]
+[Git tag update/<channel>/<label>]
         │  git push origin <tag>
         ▼
 [GitHub Action] ──eas update --branch <channel> --environment <channel>──▶ [EAS servers]
@@ -85,7 +85,7 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 ## GitHub Action
 
 נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. רץ על כל push של תג בצורה
-`update:<channel>:<label>` (למשל `update:preview:1-3-0` או `update:production:2-0-0`):
+`update/<channel>/<label>` (למשל `update/preview/1-3-0` או `update/production/2-0-0`):
 1. מפרק את התג ל-`channel` (=`environment`) ו-`label`
 2. מריץ `eas update --branch <channel> --environment <channel>` - ה-channel קובע גם
    לאיזה EAS branch מתפרסם וגם מאיזה EAS environment נשאבים משתני `EXPO_PUBLIC_*`
@@ -107,8 +107,8 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 
 לפרסום עדכון חדש שיופיע ברשימה למשתמש:
 ```bash
-git tag update:preview:1-3-0
-git push origin update:preview:1-3-0
+git tag update/preview/1-3-0
+git push origin update/preview/1-3-0
 ```
 
 ## דרישות מוקדמות (לא מותקנות אוטומטית)
