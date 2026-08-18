@@ -6,10 +6,10 @@
 ## איך זה מתחבר
 
 ```
-[Git tag <environment>/<label>]
+[Git tag update:<channel>:<label>]
         │  git push origin <tag>
         ▼
-[GitHub Action] ──eas update --branch <environment> --environment <environment>──▶ [EAS servers]
+[GitHub Action] ──eas update --branch <channel> --environment <channel>──▶ [EAS servers]
         │
         └──POST /api/updates (projectId, environment, label, ...)──▶ [manual-updates-server + MongoDB]
                                           ▲
@@ -17,7 +17,7 @@
                                    [האפליקציה שלך]
 ```
 
-ה-`environment` בתג הוא גם ה-branch שה-update מתפרסם אליו ב-EAS, גם ה-environment שממנו
+ה-`channel` בתג הוא גם ה-branch שה-update מתפרסם אליו ב-EAS, גם ה-environment שממנו
 `eas update` שואב את משתני ה-`EXPO_PUBLIC_*`, וגם המסנן שלפיו האפליקציה מבקשת מה-server את
 הרשימה (לפי `Updates.channel` הנוכחי שלה - ראה `updates.channel` ב-`eas.json` לכל build profile).
 זה בכוונה: **build של production תמיד יראה, ויוכל לבחור, רק עדכונים שפורסמו תחת environment
@@ -85,9 +85,9 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 ## GitHub Action
 
 נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. רץ על כל push של תג בצורה
-`<environment>/<label>` (למשל `preview/1-3-0` או `production/2-0-0`):
-1. מפרק את התג ל-`environment` ו-`label`
-2. מריץ `eas update --branch <environment> --environment <environment>` - ה-environment קובע גם
+`update:<channel>:<label>` (למשל `update:preview:1-3-0` או `update:production:2-0-0`):
+1. מפרק את התג ל-`channel` (=`environment`) ו-`label`
+2. מריץ `eas update --branch <channel> --environment <channel>` - ה-channel קובע גם
    לאיזה EAS branch מתפרסם וגם מאיזה EAS environment נשאבים משתני `EXPO_PUBLIC_*`
 3. קורא את ה-`projectId` מ-`app.json`
 4. שולח POST ל-`manual-updates-server` עם `projectId`, `environment`, `label` ופרטי העדכון
@@ -102,13 +102,13 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 - `MANUAL_UPDATES_SERVER_URL`
 - `MANUAL_UPDATES_API_KEY`
 
-וודא שקיים ב-EAS environment בשם תואם לכל `environment` שבו אתה משתמש בתגיות (למשל `preview`,
+וודא שקיים ב-EAS environment בשם תואם לכל `channel` שבו אתה משתמש בתגיות (למשל `preview`,
 `production`) עם משתני `EXPO_PUBLIC_*` הרלוונטיים - `eas env:list --environment preview`.
 
 לפרסום עדכון חדש שיופיע ברשימה למשתמש:
 ```bash
-git tag preview/1-3-0
-git push origin preview/1-3-0
+git tag update:preview:1-3-0
+git push origin update:preview:1-3-0
 ```
 
 ## דרישות מוקדמות (לא מותקנות אוטומטית)
