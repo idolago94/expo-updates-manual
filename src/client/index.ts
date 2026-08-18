@@ -18,6 +18,7 @@ export type ManualUpdateInfo = {
 };
 
 const STORAGE_PREFIX = '@lagoapps/expo-updates-manual/selected-update/';
+const HOME_CHANNEL_STORAGE_PREFIX = '@lagoapps/expo-updates-manual/home-channel/';
 
 function getConfig(): { apiBaseUrl: string; projectId: string } {
   const cfg = Constants.expoConfig?.extra?.manualUpdates;
@@ -54,21 +55,42 @@ function updateUrlFor(easUpdateGroupId: string): string {
 }
 
 /**
+ * The build's "home" environment/channel, e.g. "preview" or "production" —
+ * set at build time via eas.json and never overridden by this package.
+ *
+ * Updates.channel reflects the CURRENTLY RUNNING update, not the build.
+ * Once a manually-selected update is running (fetched directly by group ID,
+ * bypassing channel resolution entirely), its manifest has no channel
+ * association, so Updates.channel reads back empty. To keep filtering
+ * working even then, this caches the last non-empty value it ever saw
+ * (which only ever happens before a selection is applied, or right after
+ * resetSelection() takes effect) and falls back to that.
+ */
+async function getHomeEnvironment(projectId: string): Promise<string> {
+  const key = `${HOME_CHANNEL_STORAGE_PREFIX}${projectId}`;
+  const live = Updates.channel;
+  if (live) {
+    await AsyncStorage.setItem(key, live);
+    return live;
+  }
+  const cached = await AsyncStorage.getItem(key);
+  if (cached) return cached;
+  throw new Error(
+    '[expo-updates-manual] Could not determine this build\'s environment — Updates.channel is empty ' +
+      'and no cached value exists yet. Call resetSelection() and relaunch to recover it.'
+  );
+}
+
+/**
  * Fetches the list of selectable updates for this project from your central
- * server, filtered to the CURRENT build's own environment (Updates.channel —
- * e.g. "preview" or "production", set at build time via eas.json and never
- * overridden by this package). A production build only ever sees, and can
- * only ever select, updates published under the "production" environment
- * — it cannot be pointed at a preview update's config by mistake.
+ * server, filtered to this build's home environment (see getHomeEnvironment())
+ * — e.g. "preview" or "production". A production build only ever sees, and
+ * can only ever select, updates published under the "production"
+ * environment — it cannot be pointed at a preview update's config by mistake.
  */
 export async function listAvailableUpdates(): Promise<ManualUpdateInfo[]> {
   const { apiBaseUrl, projectId } = getConfig();
-  const environment = Updates.channel;
-  if (!environment) {
-    throw new Error(
-      '[expo-updates-manual] Updates.channel is empty — cannot determine which environment to list updates for.'
-    );
-  }
+  const environment = await getHomeEnvironment(projectId);
   const res = await fetch(
     `${apiBaseUrl}/api/updates?projectId=${encodeURIComponent(projectId)}&environment=${encodeURIComponent(environment)}`
   );
@@ -126,11 +148,15 @@ export async function selectAndApplyUpdate(update: ManualUpdateInfo): Promise<vo
  * the previous session actually gets fetched and applied — the override
  * it sets only takes effect starting with this next cold start.
  *
- * Safe to call every launch: it's a no-op if nothing was ever selected.
- * If the selected update no longer resolves (deleted upstream, runtime
- * version mismatch, offline), it logs a warning, clears the selection,
- * and leaves the app running whatever is currently installed — it never
- * retries a dead selection indefinitely.
+ * Safe to call every launch: it's a no-op if nothing was ever selected,
+ * and a no-op once the selected update is already running (a group-ID
+ * URL always resolves to that same fixed manifest, so
+ * checkForUpdateAsync() reporting nothing new IS the normal steady
+ * state here, not a failure). If the selected update genuinely no
+ * longer resolves (deleted upstream, runtime version mismatch, offline
+ * — these reject/throw rather than just report unavailable), it logs a
+ * warning, clears the selection, and leaves the app running whatever is
+ * currently installed — it never retries a dead selection indefinitely.
  */
 export async function initManualUpdates(): Promise<void> {
   if (__DEV__) return;
@@ -146,18 +172,16 @@ export async function initManualUpdates(): Promise<void> {
 
   try {
     const check = await Updates.checkForUpdateAsync();
-    if (!check.isAvailable) {
-      throw new Error(`[expo-updates-manual] Selected update "${savedGroupId}" is no longer available.`);
-    }
-
-    const fetchResult = await Updates.fetchUpdateAsync();
-    if (fetchResult.isNew) {
-      await Updates.reloadAsync();
+    if (check.isAvailable) {
+      const fetchResult = await Updates.fetchUpdateAsync();
+      if (fetchResult.isNew) {
+        await Updates.reloadAsync();
+      }
     }
   } catch (e) {
-    // The selected update no longer resolves — fall back to the build's
-    // default update source rather than getting stuck on a dead override
-    // every future launch.
+    // A genuine failure (network error, deleted update, runtime mismatch)
+    // — fall back to the build's default update source rather than
+    // getting stuck on a dead override every future launch.
     console.warn('[expo-updates-manual] initManualUpdates check failed, reverting to default:', e);
     await AsyncStorage.removeItem(storageKey(projectId));
     Updates.setUpdateURLAndRequestHeadersOverride(null);
