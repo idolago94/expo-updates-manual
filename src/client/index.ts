@@ -213,3 +213,20 @@ export async function getPersistedUpdateGroupId(): Promise<string | null> {
   const { projectId } = getConfig();
   return AsyncStorage.getItem(storageKey(projectId));
 }
+
+/**
+ * Reloads the app's JS runtime — the standard Expo "restart" primitive,
+ * used to give the user a restart-like moment after selecting or resetting
+ * an update.
+ *
+ * NOTE: per Expo's docs, this alone does NOT make
+ * `setUpdateURLAndRequestHeadersOverride()` (used by selectAndApplyUpdate()/
+ * resetSelection()) pick up the new override — that still only happens on
+ * the next full close-and-reopen of the app. There is no public
+ * cross-platform API to force that from JS. This function is a best-effort
+ * "restart" trigger, not a guarantee that the newly selected update is
+ * what comes back up.
+ */
+export async function restartApp(): Promise<void> {
+  await Updates.reloadAsync();
+}

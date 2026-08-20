@@ -6,25 +6,60 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
+  Modal,
 } from 'react-native';
 import {
   listAvailableUpdates,
   selectAndApplyUpdate,
   resetSelection,
   getPersistedUpdateGroupId,
+  restartApp,
   ManualUpdateInfo,
 } from './index';
 
-export function UpdatePickerScreen() {
+/** Colors UpdatePickerScreen renders with — pass a `theme` prop to match your app. */
+export type UpdatePickerTheme = {
+  backgroundColor?: string;
+  textColor?: string;
+  secondaryTextColor?: string;
+  borderColor?: string;
+  accentColor?: string;
+  errorColor?: string;
+  dangerColor?: string;
+  overlayColor?: string;
+  modalBackgroundColor?: string;
+  buttonTextColor?: string;
+};
+
+const defaultTheme: Required<UpdatePickerTheme> = {
+  backgroundColor: '#fff',
+  textColor: '#000',
+  secondaryTextColor: '#666',
+  borderColor: '#ccc',
+  accentColor: '#0a7',
+  errorColor: 'red',
+  dangerColor: '#c00',
+  overlayColor: 'rgba(0, 0, 0, 0.5)',
+  modalBackgroundColor: '#fff',
+  buttonTextColor: '#fff',
+};
+
+export type UpdatePickerScreenProps = {
+  theme?: UpdatePickerTheme;
+};
+
+export function UpdatePickerScreen({ theme }: UpdatePickerScreenProps = {}) {
+  const t = { ...defaultTheme, ...theme };
+
   const [updates, setUpdates] = useState<ManualUpdateInfo[]>([]);
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Selecting/resetting only takes effect on the next full app launch —
-  // there's no automatic in-app reload to wait for, so we tell the user
-  // to close and reopen the app themselves once it's set.
+  // Selecting/resetting only takes effect on the next full app launch, so
+  // we ask the user to confirm a restart via a modal once it's set.
   const [pendingRestart, setPendingRestart] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     Promise.all([listAvailableUpdates(), getPersistedUpdateGroupId()])
@@ -64,40 +99,92 @@ export function UpdatePickerScreen() {
     }
   }
 
+  async function handleConfirmRestart() {
+    try {
+      setRestarting(true);
+      await restartApp();
+    } catch (e: any) {
+      setRestarting(false);
+      setPendingRestart(false);
+      setError(e.message);
+    }
+  }
+
   if (loading) {
-    return <ActivityIndicator style={styles.center} />;
+    return <ActivityIndicator style={styles.center} color={t.accentColor} />;
   }
 
   return (
-    <View style={styles.container}>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {pendingRestart ? (
-        <Text style={styles.restartNotice}>סגור ופתח מחדש את האפליקציה כדי להחיל את הבחירה</Text>
-      ) : null}
+    <View style={[styles.container, { backgroundColor: t.backgroundColor }]}>
+      {error ? <Text style={[styles.error, { color: t.errorColor }]}>{error}</Text> : null}
       <FlatList
         data={updates}
         keyExtractor={(item) => item.easUpdateGroupId}
         renderItem={({ item }) => (
           <TouchableOpacity
-            style={styles.row}
+            style={[styles.row, { borderColor: t.borderColor }]}
             disabled={!!applying}
             onPress={() => handleSelect(item)}
           >
-            <Text style={styles.label}>
+            <Text style={[styles.label, { color: t.textColor }]}>
               {item.label}
               {item.easUpdateGroupId === currentGroupId ? '  ✓' : ''}
             </Text>
-            {item.message ? <Text style={styles.message}>{item.message}</Text> : null}
-            {applying === item.easUpdateGroupId ? <ActivityIndicator /> : null}
+            {item.message ? (
+              <Text style={[styles.message, { color: t.secondaryTextColor }]}>
+                {item.message}
+              </Text>
+            ) : null}
+            {applying === item.easUpdateGroupId ? (
+              <ActivityIndicator color={t.accentColor} />
+            ) : null}
           </TouchableOpacity>
         )}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyText, { color: t.secondaryTextColor }]}>
+              אין עדכונים זמינים
+            </Text>
+          </View>
+        }
       />
       {currentGroupId ? (
         <TouchableOpacity style={styles.resetRow} disabled={!!applying} onPress={handleReset}>
-          <Text style={styles.resetLabel}>איפוס לגרסת ברירת המחדל</Text>
-          {applying === '__reset__' ? <ActivityIndicator /> : null}
+          <Text style={[styles.resetLabel, { color: t.dangerColor }]}>איפוס לגרסת ברירת המחדל</Text>
+          {applying === '__reset__' ? <ActivityIndicator color={t.accentColor} /> : null}
         </TouchableOpacity>
       ) : null}
+
+      <Modal
+        visible={pendingRestart}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPendingRestart(false)}
+      >
+        <View style={[styles.overlay, { backgroundColor: t.overlayColor }]}>
+          <View style={[styles.modalCard, { backgroundColor: t.modalBackgroundColor }]}>
+            <Text style={[styles.modalTitle, { color: t.textColor }]}>
+              האפליקציה תופעל מחדש
+            </Text>
+            <Text style={[styles.modalMessage, { color: t.secondaryTextColor }]}>
+              יש להפעיל מחדש את האפליקציה כדי להחיל את הבחירה
+            </Text>
+            <TouchableOpacity
+              style={[styles.confirmButton, { backgroundColor: t.accentColor }]}
+              disabled={restarting}
+              onPress={handleConfirmRestart}
+            >
+              {restarting ? (
+                <ActivityIndicator color={t.buttonTextColor} />
+              ) : (
+                <Text style={[styles.confirmButtonLabel, { color: t.buttonTextColor }]}>
+                  אישור
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -108,12 +195,18 @@ const styles = StyleSheet.create({
   row: {
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#ccc',
   },
   label: { fontSize: 16, fontWeight: '600' },
-  message: { fontSize: 13, color: '#666', marginTop: 2 },
-  error: { color: 'red', marginBottom: 8 },
-  restartNotice: { color: '#0a7', marginBottom: 8, fontWeight: '600' },
+  message: { fontSize: 13, marginTop: 2 },
+  error: { marginBottom: 8 },
   resetRow: { paddingVertical: 16, alignItems: 'center' },
-  resetLabel: { color: '#c00', fontSize: 14 },
+  resetLabel: { fontSize: 14 },
+  emptyContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 32 },
+  emptyText: { fontSize: 14 },
+  overlay: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  modalCard: { width: '100%', borderRadius: 12, padding: 20 },
+  modalTitle: { fontSize: 17, fontWeight: '700', marginBottom: 8, textAlign: 'center' },
+  modalMessage: { fontSize: 14, marginBottom: 16, textAlign: 'center' },
+  confirmButton: { paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  confirmButtonLabel: { fontSize: 15, fontWeight: '600' },
 });

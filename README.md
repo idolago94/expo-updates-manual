@@ -80,14 +80,23 @@ useEffect(() => {
 ```tsx
 import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/UpdatePickerScreen';
 
-<UpdatePickerScreen />
+<UpdatePickerScreen theme={{ backgroundColor: '#111', textColor: '#fff', accentColor: '#4da3ff' }} />
 ```
+
+`theme` הוא אופציונלי - כל שדה שלא מועבר נופל לברירת מחדל בהירה. ראה `UpdatePickerTheme` ב-
+`src/client/UpdatePickerScreen.tsx` לרשימת השדות הנתמכים (רקע, טקסט, טקסט משני, גבולות, צבע
+הדגשה, שגיאה, כפתור איפוס, ורקע/שכבת-על של המודל).
+
+אם רשימת העדכונים ריקה, `UpdatePickerScreen` מציג מצב ריק ("אין עדכונים זמינים") במקום רשימה
+ריקה.
 
 הבחירה נשמרת ב-AsyncStorage. **חשוב:** `selectAndApplyUpdate`/`resetSelection` לא מרעננים את
 האפליקציה מיידית - לפי התיעוד של Expo, override של `updateUrl` נכנס לתוקף רק בהפעלה מלאה הבאה
-(סגירה מוחלטת ופתיחה מחדש - `Updates.reloadAsync()` לא מספיק). `UpdatePickerScreen` מציג הודעה
-שמבקשת מהמשתמש לסגור ולפתוח את האפליקציה מחדש; רק ב-launch הבא, `initManualUpdates()` בפועל
-מוריד ומחיל את העדכון שנבחר.
+(סגירה מוחלטת ופתיחה מחדש - `Updates.reloadAsync()` לא מספיק בשביל זה). לכן `UpdatePickerScreen`
+מציג מודל שמודיע שהאפליקציה תופעל מחדש; לחיצה על "אישור" קוראת ל-`restartApp()` (עטיפה סביב
+`Updates.reloadAsync()`) - זו פעולת ה-"restart" הזמינה מ-JS ב-Expo, אבל היא לא מבטיחה שה-override
+עצמו ייקלט (זה עדיין דורש סגירה מוחלטת ופתיחה מחדש בפועל). ב-launch הבא, `initManualUpdates()`
+בפועל מוריד ומחיל את העדכון שנבחר.
 
 ## GitHub Action
 
@@ -197,5 +206,7 @@ manifest קבוע, אז ברגע שהעדכון שנבחר כבר רץ זה בד
 - שדות ה-JSON המדויקים שמחזיר `eas update --json` (למשל `group`/`id`) כדאי לוודא מול הפלט האמיתי
   אצלך בגרסת ה-eas-cli הנוכחית ולהתאים ב-`templates/github-workflow/manual-update.yml` אם צריך -
   `easUpdateGroupId` (השדה ש-`selectAndApplyUpdate` בפועל צריך) ממופה משם.
-- אחרי בחירה/איפוס אין רענון אוטומטי מיידי - ה-UI צריך להנחות את המשתמש לסגור ולפתוח מחדש את
-  האפליקציה.
+- אחרי בחירה/איפוס אין רענון אוטומטי מיידי - `UpdatePickerScreen` מציג מודל שמבקש אישור ואז קורא
+  ל-`restartApp()`, אבל זו רק פעולת "restart" ברמת ה-JS; קליטת ה-override עדיין תלויה בסגירה
+  מוחלטת ופתיחה מחדש בפועל של האפליקציה (אין API ציבורי חוצה-פלטפורמות ל-restart תהליך אמיתי
+  מ-JS ב-Expo/React Native).
