@@ -15,10 +15,73 @@ export type ManualUpdateInfo = {
   easUpdateGroupId: string;
   message?: string | null;
   createdAt?: string | null;
+  /** True when this is the update marked as default for this project+environment on the server. */
+  isDefault?: boolean | null;
 };
+
+/**
+ * Progress of the automatic update flow that `initManualUpdates()` runs at
+ * startup, exposed to app code via `useManualUpdateState()` so a developer
+ * can decide what to show while a background update is being applied.
+ *
+ * - 'idle': `initManualUpdates()` hasn't run (or finished) yet.
+ * - 'checking': looking up which update to apply (persisted selection or server default).
+ * - 'downloading': an update was found and is being fetched.
+ * - 'restarting': the update finished downloading and the JS bundle is being swapped in.
+ * - 'up-to-date': the update to apply is already the one running — nothing to do.
+ * - 'no-update': no persisted selection and no default update exists for this project+environment.
+ * - 'error': checking or applying the update failed; the previous state keeps running.
+ */
+export type ManualUpdatePhase =
+  | 'idle'
+  | 'checking'
+  | 'downloading'
+  | 'restarting'
+  | 'up-to-date'
+  | 'no-update'
+  | 'error';
+
+export type ManualUpdateState = {
+  phase: ManualUpdatePhase;
+  /** The update being checked/applied in the current phase, if any. */
+  update: ManualUpdateInfo | null;
+  /** Set when phase is 'error'; the underlying error message. */
+  error: string | null;
+};
+
+let currentUpdateState: ManualUpdateState = { phase: 'idle', update: null, error: null };
+const updateStateListeners = new Set<(state: ManualUpdateState) => void>();
+
+function setUpdateState(patch: Partial<ManualUpdateState>) {
+  currentUpdateState = {
+    phase: currentUpdateState.phase,
+    update: currentUpdateState.update,
+    error: currentUpdateState.error,
+    ...patch,
+  };
+  updateStateListeners.forEach((listener) => listener(currentUpdateState));
+}
+
+/** The current state of the background update flow. See `ManualUpdateState`. */
+export function getManualUpdateState(): ManualUpdateState {
+  return currentUpdateState;
+}
+
+/**
+ * Subscribes to changes in the background update flow's state. Returns an
+ * unsubscribe function. Prefer `useManualUpdateState()` in React components.
+ */
+export function subscribeToManualUpdateState(
+  listener: (state: ManualUpdateState) => void
+): () => void {
+  updateStateListeners.add(listener);
+  listener(currentUpdateState);
+  return () => updateStateListeners.delete(listener);
+}
 
 const STORAGE_PREFIX = '@lagoapps/expo-updates-manual/selected-update/';
 const HOME_CHANNEL_STORAGE_PREFIX = '@lagoapps/expo-updates-manual/home-channel/';
+const APPLIED_DEFAULT_STORAGE_PREFIX = '@lagoapps/expo-updates-manual/applied-default/';
 
 function getConfig(): { apiBaseUrl: string; projectId: string } {
   const cfg = Constants.expoConfig?.extra?.manualUpdates;
@@ -48,6 +111,10 @@ function getEasProjectId(): string {
 
 function storageKey(projectId: string) {
   return `${STORAGE_PREFIX}${projectId}`;
+}
+
+function appliedDefaultStorageKey(projectId: string) {
+  return `${APPLIED_DEFAULT_STORAGE_PREFIX}${projectId}`;
 }
 
 function updateUrlFor(easUpdateGroupId: string): string {
@@ -101,6 +168,24 @@ export async function listAvailableUpdates(): Promise<ManualUpdateInfo[]> {
 }
 
 /**
+ * Fetches the update currently marked default for this project+environment
+ * on the server, or `null` if none is set. This is what `initManualUpdates()`
+ * applies automatically in the background when the user hasn't picked an
+ * update themselves.
+ */
+export async function getDefaultUpdate(): Promise<ManualUpdateInfo | null> {
+  const { apiBaseUrl, projectId } = getConfig();
+  const environment = await getHomeEnvironment(projectId);
+  const res = await fetch(
+    `${apiBaseUrl}/api/updates/default?projectId=${encodeURIComponent(projectId)}&environment=${encodeURIComponent(environment)}`
+  );
+  if (!res.ok) {
+    throw new Error(`[expo-updates-manual] Failed to fetch default update: ${res.status}`);
+  }
+  return res.json();
+}
+
+/**
  * Points the app at one specific, already-published update (by its EAS
  * update group ID) and persists the choice so it's picked up automatically
  * on the next app launch (until resetSelection() is called).
@@ -139,52 +224,121 @@ export async function selectAndApplyUpdate(update: ManualUpdateInfo): Promise<vo
 }
 
 /**
+ * Downloads and applies whatever update the override currently set by
+ * `Updates.setUpdateURLAndRequestHeadersOverride` points at, if it isn't
+ * already running. Shared by the persisted-selection and default-update
+ * branches of `initManualUpdates()`. Emits 'restarting' just before the
+ * reload, since `Updates.reloadAsync()` swaps the JS bundle for a fresh
+ * one and code after it may never run.
+ */
+async function checkFetchAndApplyOverride(): Promise<boolean> {
+  const check = await Updates.checkForUpdateAsync();
+  if (!check.isAvailable) return false;
+
+  const fetchResult = await Updates.fetchUpdateAsync();
+  if (fetchResult.isNew) {
+    setUpdateState({ phase: 'restarting' });
+    await Updates.reloadAsync();
+  }
+  return true;
+}
+
+/**
  * Call once, early at app startup (e.g. top of App.tsx, before rendering
- * anything that depends on the update being current). Re-applies a
- * previously persisted update-group selection, then downloads and applies
- * it if it isn't already running.
+ * anything that depends on the update being current).
  *
- * This is the point where a selection made via selectAndApplyUpdate() in
- * the previous session actually gets fetched and applied — the override
- * it sets only takes effect starting with this next cold start.
+ * If a user previously picked an update via `selectAndApplyUpdate()`,
+ * re-applies that persisted selection — downloading and applying it if it
+ * isn't already running. This is the point where a selection made in the
+ * previous session actually gets fetched and applied; the override it
+ * sets only takes effect starting with this next cold start.
  *
- * Safe to call every launch: it's a no-op if nothing was ever selected,
- * and a no-op once the selected update is already running (a group-ID
- * URL always resolves to that same fixed manifest, so
- * checkForUpdateAsync() reporting nothing new IS the normal steady
- * state here, not a failure). If the selected update genuinely no
- * longer resolves (deleted upstream, runtime version mismatch, offline
- * — these reject/throw rather than just report unavailable), it logs a
- * warning, clears the selection, and leaves the app running whatever is
- * currently installed — it never retries a dead selection indefinitely.
+ * Otherwise, falls back to whichever update is marked default for this
+ * project+environment on the server (see `getDefaultUpdate()`), and
+ * applies it automatically in the background — no user interaction
+ * needed. The default is re-checked on every launch (not persisted the
+ * way a manual selection is), so changing which update is default on the
+ * server takes effect on the next launch of every app that hasn't picked
+ * one itself.
+ *
+ * Use `useManualUpdateState()` to observe progress ('checking',
+ * 'downloading', 'restarting', 'up-to-date', 'no-update', 'error') from
+ * your UI while this runs.
+ *
+ * Safe to call every launch: it's a no-op once the relevant update is
+ * already running (a group-ID URL always resolves to that same fixed
+ * manifest, so checkForUpdateAsync() reporting nothing new IS the normal
+ * steady state here, not a failure). If an update genuinely no longer
+ * resolves (deleted upstream, runtime version mismatch, offline — these
+ * reject/throw rather than just report unavailable), it logs a warning,
+ * clears the relevant persisted state, and leaves the app running
+ * whatever is currently installed — it never retries a dead update
+ * indefinitely.
  */
 export async function initManualUpdates(): Promise<void> {
   if (__DEV__) return;
 
   const { projectId } = getConfig();
   const savedGroupId = await AsyncStorage.getItem(storageKey(projectId));
-  if (!savedGroupId) return;
 
+  if (savedGroupId) {
+    setUpdateState({ phase: 'checking', update: null, error: null });
+    Updates.setUpdateURLAndRequestHeadersOverride({
+      updateUrl: updateUrlFor(savedGroupId),
+      requestHeaders: {},
+    });
+
+    try {
+      setUpdateState({ phase: 'downloading' });
+      const applied = await checkFetchAndApplyOverride();
+      setUpdateState({ phase: applied ? 'restarting' : 'up-to-date' });
+    } catch (e: any) {
+      // A genuine failure (network error, deleted update, runtime mismatch)
+      // — fall back to the build's default update source rather than
+      // getting stuck on a dead override every future launch.
+      console.warn('[expo-updates-manual] initManualUpdates check failed, reverting to default:', e);
+      await AsyncStorage.removeItem(storageKey(projectId));
+      Updates.setUpdateURLAndRequestHeadersOverride(null);
+      setUpdateState({ phase: 'error', error: e?.message ?? String(e) });
+    }
+    return;
+  }
+
+  // No manual selection — apply whichever update the server currently
+  // marks as default for this project+environment, if any.
+  setUpdateState({ phase: 'checking', update: null, error: null });
+  let defaultUpdate: ManualUpdateInfo | null = null;
+  try {
+    defaultUpdate = await getDefaultUpdate();
+  } catch (e: any) {
+    console.warn('[expo-updates-manual] Failed to fetch default update:', e);
+    setUpdateState({ phase: 'error', error: e?.message ?? String(e) });
+    return;
+  }
+
+  if (!defaultUpdate) {
+    await AsyncStorage.removeItem(appliedDefaultStorageKey(projectId));
+    setUpdateState({ phase: 'no-update', update: null, error: null });
+    return;
+  }
+
+  setUpdateState({ phase: 'downloading', update: defaultUpdate });
   Updates.setUpdateURLAndRequestHeadersOverride({
-    updateUrl: updateUrlFor(savedGroupId),
+    updateUrl: updateUrlFor(defaultUpdate.easUpdateGroupId),
     requestHeaders: {},
   });
 
   try {
-    const check = await Updates.checkForUpdateAsync();
-    if (check.isAvailable) {
-      const fetchResult = await Updates.fetchUpdateAsync();
-      if (fetchResult.isNew) {
-        await Updates.reloadAsync();
-      }
-    }
-  } catch (e) {
-    // A genuine failure (network error, deleted update, runtime mismatch)
-    // — fall back to the build's default update source rather than
-    // getting stuck on a dead override every future launch.
-    console.warn('[expo-updates-manual] initManualUpdates check failed, reverting to default:', e);
-    await AsyncStorage.removeItem(storageKey(projectId));
+    const applied = await checkFetchAndApplyOverride();
+    await AsyncStorage.setItem(appliedDefaultStorageKey(projectId), defaultUpdate.easUpdateGroupId);
+    setUpdateState({ phase: applied ? 'restarting' : 'up-to-date', update: defaultUpdate });
+  } catch (e: any) {
+    // Deleted upstream / runtime mismatch / offline — revert the override
+    // so the app keeps running whatever is currently installed instead of
+    // retrying a dead default every launch.
+    console.warn('[expo-updates-manual] Failed to apply default update, reverting to build default:', e);
     Updates.setUpdateURLAndRequestHeadersOverride(null);
+    setUpdateState({ phase: 'error', update: defaultUpdate, error: e?.message ?? String(e) });
   }
 }
 

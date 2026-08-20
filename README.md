@@ -89,6 +89,36 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 שמבקשת מהמשתמש לסגור ולפתוח את האפליקציה מחדש; רק ב-launch הבא, `initManualUpdates()` בפועל
 מוריד ומחיל את העדכון שנבחר.
 
+## עדכון ברירת מחדל (default update)
+
+בשרת אפשר לסמן עדכון אחד כברירת מחדל לכל `projectId`+`environment` (דרך מסך הניהול, `GET /admin`
+על השרת). כשמשתמש **לא** בחר עדכון ידנית ב-`UpdatePickerScreen`, `initManualUpdates()` יבדוק בכל
+launch מה העדכון המסומן כברירת מחדל, ואם הוא שונה ממה שרץ כרגע - יוריד ויחיל אותו **ברקע, אוטומטית**
+(אותו מנגנון `setUpdateURLAndRequestHeadersOverride` → `checkForUpdateAsync` → `fetchUpdateAsync` →
+`reloadAsync`, בלי צורך בשום פעולה של המשתמש). בחירה ידנית של המשתמש תמיד גוברת על ברירת המחדל.
+
+כדי לדעת בקוד שלך מה קורה ברקע (למשל להציג מסך טעינה בזמן שמעדכן), יש hook:
+
+```tsx
+import { useManualUpdateState } from '@lagoapps/expo-updates-manual/src/client/useManualUpdateState';
+
+function App() {
+  const { phase, update, error } = useManualUpdateState();
+
+  if (phase === 'downloading' || phase === 'restarting') {
+    return <UpdatingOverlay label={update?.label} />;
+  }
+  if (phase === 'error') {
+    console.warn('Update check failed:', error);
+  }
+
+  return <MainApp />;
+}
+```
+
+`phase` הוא אחד מ-`'idle' | 'checking' | 'downloading' | 'restarting' | 'up-to-date' | 'no-update' | 'error'`
+- ראה תיעוד `ManualUpdateState` ב-`src/client/index.ts` לפירוט כל ערך.
+
 ## GitHub Action
 
 נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. רץ על כל push של תג בצורה
