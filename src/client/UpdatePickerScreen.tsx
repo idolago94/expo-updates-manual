@@ -125,11 +125,11 @@ export function UpdatePickerScreen({ theme, texts }: UpdatePickerScreenProps = {
     } catch (e: any) {
       setError(e.message);
     } finally {
-      // In production restartApp() tears down this JS context via
-      // Updates.reloadAsync(), so this never actually runs there. In
-      // development it's a no-op (see restartApp()'s __DEV__ guard) and this
-      // component keeps running — without resetting here the modal would be
-      // stuck showing its spinner forever.
+      // On Android in production, restartApp() kills and relaunches the
+      // whole process via react-native-restart, so this never actually runs
+      // there. On iOS (and in development, where restartApp() is a no-op —
+      // see its __DEV__ guard) this component keeps running — without
+      // resetting here the modal would be stuck showing its spinner forever.
       setRestarting(false);
       setPendingRestart(false);
     }
