@@ -123,9 +123,15 @@ export function UpdatePickerScreen({ theme, texts }: UpdatePickerScreenProps = {
       setRestarting(true);
       await restartApp();
     } catch (e: any) {
+      setError(e.message);
+    } finally {
+      // In production restartApp() tears down this JS context via
+      // Updates.reloadAsync(), so this never actually runs there. In
+      // development it's a no-op (see restartApp()'s __DEV__ guard) and this
+      // component keeps running — without resetting here the modal would be
+      // stuck showing its spinner forever.
       setRestarting(false);
       setPendingRestart(false);
-      setError(e.message);
     }
   }
 

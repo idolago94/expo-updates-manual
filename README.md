@@ -300,3 +300,10 @@ manifest קבוע, אז ברגע שהעדכון שנבחר כבר רץ זה בד
   ל-`restartApp()`, אבל זו רק פעולת "restart" ברמת ה-JS; קליטת ה-override עדיין תלויה בסגירה
   מוחלטת ופתיחה מחדש בפועל של האפליקציה (אין API ציבורי חוצה-פלטפורמות ל-restart תהליך אמיתי
   מ-JS ב-Expo/React Native).
+- **`selectAndApplyUpdate` / `resetSelection` / `restartApp` הם no-op ב-`__DEV__`** (עם
+  `console.warn` בלבד) - כל השלושה קוראים ל-native APIs של `expo-updates`
+  (`setUpdateURLAndRequestHeadersOverride` / `reloadAsync`) שדוחים את ה-promise שלהם ב-Expo Go
+  ובכל dev/debug build, כי ה-native controller של expo-updates לא מאותחל שם בכלל. `UpdatePickerScreen`
+  עצמו לא בודק `__DEV__` - הוא פשוט מציג את מודל ה-restart כרגיל גם ב-dev, ולחיצה על אישור פשוט לא
+  עושה כלום (עם אזהרה בקונסול) במקום לזרוק שגיאת native. כדי לבדוק את הזרימה בפועל צריך build אמיתי
+  דרך EAS (profile עם `internal`/`preview` distribution) - לא Expo Go ולא dev client.
