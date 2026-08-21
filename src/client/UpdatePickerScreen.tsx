@@ -44,12 +44,31 @@ const defaultTheme: Required<UpdatePickerTheme> = {
   buttonTextColor: '#fff',
 };
 
-export type UpdatePickerScreenProps = {
-  theme?: UpdatePickerTheme;
+/** Copy UpdatePickerScreen renders with — pass a `texts` prop to override any of it. */
+export type UpdatePickerTexts = {
+  emptyState?: string;
+  resetLabel?: string;
+  restartModalTitle?: string;
+  restartModalMessage?: string;
+  confirmButtonLabel?: string;
 };
 
-export function UpdatePickerScreen({ theme }: UpdatePickerScreenProps = {}) {
+const defaultTexts: Required<UpdatePickerTexts> = {
+  emptyState: 'No updates available',
+  resetLabel: 'Reset to default version',
+  restartModalTitle: 'The app will restart',
+  restartModalMessage: 'Restart the app to apply your selection',
+  confirmButtonLabel: 'Confirm',
+};
+
+export type UpdatePickerScreenProps = {
+  theme?: UpdatePickerTheme;
+  texts?: UpdatePickerTexts;
+};
+
+export function UpdatePickerScreen({ theme, texts }: UpdatePickerScreenProps = {}) {
   const t = { ...defaultTheme, ...theme };
+  const s = { ...defaultTexts, ...texts };
 
   const [updates, setUpdates] = useState<ManualUpdateInfo[]>([]);
   const [currentGroupId, setCurrentGroupId] = useState<string | null>(null);
@@ -143,14 +162,14 @@ export function UpdatePickerScreen({ theme }: UpdatePickerScreenProps = {}) {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={[styles.emptyText, { color: t.secondaryTextColor }]}>
-              אין עדכונים זמינים
+              {s.emptyState}
             </Text>
           </View>
         }
       />
       {currentGroupId ? (
         <TouchableOpacity style={styles.resetRow} disabled={!!applying} onPress={handleReset}>
-          <Text style={[styles.resetLabel, { color: t.dangerColor }]}>איפוס לגרסת ברירת המחדל</Text>
+          <Text style={[styles.resetLabel, { color: t.dangerColor }]}>{s.resetLabel}</Text>
           {applying === '__reset__' ? <ActivityIndicator color={t.accentColor} /> : null}
         </TouchableOpacity>
       ) : null}
@@ -164,10 +183,10 @@ export function UpdatePickerScreen({ theme }: UpdatePickerScreenProps = {}) {
         <View style={[styles.overlay, { backgroundColor: t.overlayColor }]}>
           <View style={[styles.modalCard, { backgroundColor: t.modalBackgroundColor }]}>
             <Text style={[styles.modalTitle, { color: t.textColor }]}>
-              האפליקציה תופעל מחדש
+              {s.restartModalTitle}
             </Text>
             <Text style={[styles.modalMessage, { color: t.secondaryTextColor }]}>
-              יש להפעיל מחדש את האפליקציה כדי להחיל את הבחירה
+              {s.restartModalMessage}
             </Text>
             <TouchableOpacity
               style={[styles.confirmButton, { backgroundColor: t.accentColor }]}
@@ -178,7 +197,7 @@ export function UpdatePickerScreen({ theme }: UpdatePickerScreenProps = {}) {
                 <ActivityIndicator color={t.buttonTextColor} />
               ) : (
                 <Text style={[styles.confirmButtonLabel, { color: t.buttonTextColor }]}>
-                  אישור
+                  {s.confirmButtonLabel}
                 </Text>
               )}
             </TouchableOpacity>

@@ -80,15 +80,22 @@ useEffect(() => {
 ```tsx
 import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/UpdatePickerScreen';
 
-<UpdatePickerScreen theme={{ backgroundColor: '#111', textColor: '#fff', accentColor: '#4da3ff' }} />
+<UpdatePickerScreen
+  theme={{ backgroundColor: '#111', textColor: '#fff', accentColor: '#4da3ff' }}
+  texts={{ resetLabel: 'Switch back to default', confirmButtonLabel: 'Restart now' }}
+/>
 ```
 
 `theme` הוא אופציונלי - כל שדה שלא מועבר נופל לברירת מחדל בהירה. ראה `UpdatePickerTheme` ב-
 `src/client/UpdatePickerScreen.tsx` לרשימת השדות הנתמכים (רקע, טקסט, טקסט משני, גבולות, צבע
 הדגשה, שגיאה, כפתור איפוס, ורקע/שכבת-על של המודל).
 
-אם רשימת העדכונים ריקה, `UpdatePickerScreen` מציג מצב ריק ("אין עדכונים זמינים") במקום רשימה
-ריקה.
+כל הטקסטים שהמסך מציג (אנגלית כברירת מחדל) ניתנים לדריסה דרך `texts` - ראה `UpdatePickerTexts`
+לרשימת המפתחות הנתמכים (מצב ריק, כפתור איפוס, כותרת/גוף מודל ה-restart, כפתור אישור). שימושי
+לתרגום או להתאמת הניסוח לטון של האפליקציה.
+
+אם רשימת העדכונים ריקה, `UpdatePickerScreen` מציג מצב ריק ("No updates available" כברירת מחדל,
+ניתן לדריסה דרך `texts.emptyState`) במקום רשימה ריקה.
 
 הבחירה נשמרת ב-AsyncStorage. **חשוב:** `selectAndApplyUpdate`/`resetSelection` לא מרעננים את
 האפליקציה מיידית - לפי התיעוד של Expo, override של `updateUrl` נכנס לתוקף רק בהפעלה מלאה הבאה
