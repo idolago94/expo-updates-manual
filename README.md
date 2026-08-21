@@ -174,6 +174,43 @@ git push origin update/preview/1-3-0
 או, בלי תג - מלשונית Actions ב-GitHub: Run workflow על `Publish EAS Update (manual selection)`,
 לבחור `channel` ולהקליד `label`.
 
+## EAS Workflows - דיווח release אחרי build/submit
+
+בנוסף ל-GitHub Action שמדווח על עדכוני OTA, נוצרים אוטומטית גם שני קבצי [EAS Workflows](https://docs.expo.dev/eas/workflows/introduction/)
+(לא GitHub Actions - workflows שרצים ישירות על תשתית EAS) תחת `.eas/workflows/`:
+
+- **`build-and-report.yml`** - מריץ `eas build` (בוחרים `platform` ו-`profile` בהרצה ידנית), ומיד
+  אחרי שה-build מסתיים שולח לשרת `POST /api/projects/:projectId/releases` עם קישור ישיר לעמוד
+  ה-build ב-expo.dev ופרטים (platform, profile, גרסה).
+- **`submit-and-report.yml`** - מוצא (`type: get-build`) את ה-build האחרון שתואם ל-`platform`+`profile`
+  שנבחרו, שולח אותו ל-store (`type: submit`), ומדווח release לאותו קישור build - עמוד ה-submission
+  עצמו מקושר משם.
+
+בשני המקרים `profile` משמש גם כ-EAS build profile וגם כ-`environment` שתחתיו ה-release נשמר בשרת -
+אותו עיקרון כמו `channel` ב-`manual-update.yml`, כדאי לשמור על עקביות בין השניים (`preview`,
+`production`).
+
+הקישור מדווח ל-`environment` ב-`releases` של הפרויקט (ראה `manual-updates-server` README) ומוצג
+במסך הניהול (`GET /admin`) כ-badge לחיץ שנפתח בטאב חדש.
+
+### הגדרה
+
+צריך `expo.owner` מוגדר ב-`app.json` (או ש-`eas whoami` יעבוד בזמן ה-workflow) כדי לבנות את הקישור
+ל-expo.dev, ו-`expo.extra.manualUpdates.projectId` (מוגדר ע"י הפלאגין של החבילה הזו).
+
+וצריך להגדיר ב-EAS (לא ב-GitHub!) שני environment variables תחת ה-environment בשם `production`
+(אלה credentials לדיווח לשרת, לא קונפיג per-profile, אז מספיק עותק אחד בלי קשר לאיזה profile
+נבנה בפועל):
+
+```bash
+eas env:create --scope project --environment production --name MANUAL_UPDATES_SERVER_URL \
+  --value https://manual-updates-server.vercel.app --visibility plain-text
+eas env:create --scope project --environment production --name MANUAL_UPDATES_API_KEY \
+  --value <ADMIN_API_KEY> --visibility secret
+```
+
+הרצה: `eas workflow:run .eas/workflows/build-and-report.yml` (או מלשונית ה-Workflows באתר expo.dev).
+
 ## דרישות מוקדמות (לא מותקנות אוטומטית)
 
 החבילה **לא** מתקינה או מקנפגת את `expo-updates` בשבילך - היא רק בונה על גביו. לפני ההתקנה, ודא שבפרויקט:

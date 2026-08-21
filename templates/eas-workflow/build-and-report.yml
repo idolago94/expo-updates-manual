@@ -1,0 +1,58 @@
+name: Build & report release
+
+# Runs an EAS Build and, right after it finishes, reports the build's
+# expo.dev dashboard link (and a few details) to the manual-updates server -
+# same server the OTA update picker talks to - so the admin screen can show
+# a "last release" link per project+environment.
+#
+# Run it from the Actions/Workflows tab (or `eas workflow:run
+# .eas/workflows/build-and-report.yml`), picking a platform and a profile.
+# `profile` is both the EAS build profile AND the "environment" the release
+# is filed under on the server - keep it consistent with the channel names
+# used by manual-update.yml (e.g. "preview", "production").
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to build'
+        required: true
+        type: choice
+        default: ios
+        options:
+          - ios
+          - android
+      profile:
+        description: 'EAS build profile (also used as the reported environment)'
+        required: true
+        type: string
+        default: preview
+
+jobs:
+  build:
+    name: Build
+    type: build
+    params:
+      platform: ${{ inputs.platform }}
+      profile: ${{ inputs.profile }}
+
+  report_release:
+    name: Report release to manual-updates server
+    needs: [build]
+    # MANUAL_UPDATES_SERVER_URL / MANUAL_UPDATES_API_KEY are read from this
+    # EAS environment's Environment Variables (Project settings -> Environment
+    # variables, or `eas env:create`) - set them once under "production"
+    # (these are reporting credentials, not per-profile app config, so one
+    # copy is enough regardless of which profile actually gets built).
+    environment: production
+    steps:
+      - uses: eas/checkout
+      - name: Report build release
+        run: node .eas/workflows/scripts/report-release.js
+        env:
+          TYPE: build
+          ENVIRONMENT: ${{ inputs.profile }}
+          BUILD_ID: ${{ needs.build.outputs.build_id }}
+          PLATFORM: ${{ needs.build.outputs.platform }}
+          PROFILE: ${{ needs.build.outputs.profile }}
+          APP_VERSION: ${{ needs.build.outputs.app_version }}
+          APP_BUILD_VERSION: ${{ needs.build.outputs.app_build_version }}

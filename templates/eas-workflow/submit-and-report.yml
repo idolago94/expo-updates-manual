@@ -1,0 +1,61 @@
+name: Submit & report release
+
+# Submits the latest matching EAS build to the store and, right after it
+# finishes, reports a release to the manual-updates server - same idea as
+# build-and-report.yml, just for a submission instead of a fresh build.
+#
+# Uses a `get-build` job to find the most recent build matching the given
+# platform+profile (so you don't need to know its build ID by hand), then
+# submits that. The reported link points at that build's expo.dev dashboard
+# page - the submission's own status is linked from there.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Platform to submit'
+        required: true
+        type: choice
+        default: ios
+        options:
+          - ios
+          - android
+      profile:
+        description: 'EAS build profile to look up and submit (also used as the reported environment)'
+        required: true
+        type: string
+        default: production
+
+jobs:
+  latest_build:
+    name: Find latest matching build
+    type: get-build
+    params:
+      platform: ${{ inputs.platform }}
+      profile: ${{ inputs.profile }}
+
+  submit:
+    name: Submit
+    type: submit
+    needs: [latest_build]
+    params:
+      build_id: ${{ needs.latest_build.outputs.build_id }}
+      profile: ${{ inputs.profile }}
+
+  report_release:
+    name: Report release to manual-updates server
+    needs: [latest_build, submit]
+    # See build-and-report.yml for why these are read from the "production"
+    # EAS environment regardless of which profile was actually submitted.
+    environment: production
+    steps:
+      - uses: eas/checkout
+      - name: Report submit release
+        run: node .eas/workflows/scripts/report-release.js
+        env:
+          TYPE: submit
+          ENVIRONMENT: ${{ inputs.profile }}
+          BUILD_ID: ${{ needs.latest_build.outputs.build_id }}
+          PLATFORM: ${{ needs.latest_build.outputs.platform }}
+          PROFILE: ${{ needs.latest_build.outputs.profile }}
+          APP_VERSION: ${{ needs.latest_build.outputs.app_version }}
+          APP_BUILD_VERSION: ${{ needs.latest_build.outputs.app_build_version }}

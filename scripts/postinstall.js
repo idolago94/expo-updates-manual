@@ -102,6 +102,42 @@ function installWorkflowTemplate() {
   );
 }
 
+/**
+ * Copies build-and-report.yml / submit-and-report.yml (and the script they
+ * both run) into .eas/workflows/ — EAS Workflows, not GitHub Actions. These
+ * run an EAS Build/Submit and report the resulting release link to the
+ * manual-updates server. Skips any file that already exists, same policy as
+ * the GitHub Action template above.
+ */
+function installEasWorkflowTemplates() {
+  const srcDir = path.join(__dirname, '..', 'templates', 'eas-workflow');
+  if (!fs.existsSync(srcDir)) return; // e.g. running inside this package's own repo
+
+  const workflowsDir = path.join(projectRoot, '.eas', 'workflows');
+  const scriptsDir = path.join(workflowsDir, 'scripts');
+  fs.mkdirSync(scriptsDir, { recursive: true });
+
+  const copyIfMissing = (srcPath, destPath) => {
+    if (fs.existsSync(destPath)) {
+      console.log(`[expo-updates-manual] ${path.relative(projectRoot, destPath)} already exists, skipping.`);
+      return;
+    }
+    fs.copyFileSync(srcPath, destPath);
+    console.log(`[expo-updates-manual] Added ${path.relative(projectRoot, destPath)}`);
+  };
+
+  copyIfMissing(path.join(srcDir, 'build-and-report.yml'), path.join(workflowsDir, 'build-and-report.yml'));
+  copyIfMissing(path.join(srcDir, 'submit-and-report.yml'), path.join(workflowsDir, 'submit-and-report.yml'));
+  copyIfMissing(
+    path.join(srcDir, 'scripts', 'report-release.js'),
+    path.join(scriptsDir, 'report-release.js')
+  );
+  console.log(
+    '[expo-updates-manual] Remember to set MANUAL_UPDATES_SERVER_URL and MANUAL_UPDATES_API_KEY as EAS ' +
+      'environment variables (`eas env:create`) under the "production" environment.'
+  );
+}
+
 checkVersions(); // exits process on failure — nothing below runs if incompatible
 
 try {
@@ -109,4 +145,10 @@ try {
 } catch (err) {
   // Never fail the install over the workflow-copy step specifically.
   console.warn('[expo-updates-manual] Could not install GitHub Action template:', err.message);
+}
+
+try {
+  installEasWorkflowTemplates();
+} catch (err) {
+  console.warn('[expo-updates-manual] Could not install EAS Workflow templates:', err.message);
 }
