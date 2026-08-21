@@ -137,9 +137,16 @@ function App() {
 
 ## GitHub Action
 
-נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. רץ על כל push של תג בצורה
-`update/<channel>/<label>` (למשל `update/preview/1-3-0` או `update/production/2-0-0`):
-1. מפרק את התג ל-`channel` (=`environment`) ו-`label`
+נוצר אוטומטית ב-`.github/workflows/manual-update.yml`. יש שתי דרכים להריץ אותו:
+
+1. push של תג בצורה `update/<channel>/<label>` (למשל `update/preview/1-3-0` או
+   `update/production/2-0-0`)
+2. הרצה ידנית מלשונית Actions ב-GitHub (או ה-API) - בוחרים `channel` מרשימה ומקלידים
+   `label`. שימושי כשאין אפשרות לדחוף תג - למשל session של agent עם הרשאות git שמוגבלות
+   לענף בלבד - וגם לפרסום חוזר בלי ליצור תג מיותר.
+
+בשני המקרים ה-workflow:
+1. קובע `channel` (=`environment`) ו-`label` - מהתג, או מהקלט הידני
 2. מריץ `eas update --branch <channel> --environment <channel>` - ה-channel קובע גם
    לאיזה EAS branch מתפרסם וגם מאיזה EAS environment נשאבים משתני `EXPO_PUBLIC_*`
 3. קורא את ה-`projectId` מ-`app.json`
@@ -163,6 +170,9 @@ function App() {
 git tag update/preview/1-3-0
 git push origin update/preview/1-3-0
 ```
+
+או, בלי תג - מלשונית Actions ב-GitHub: Run workflow על `Publish EAS Update (manual selection)`,
+לבחור `channel` ולהקליד `label`.
 
 ## דרישות מוקדמות (לא מותקנות אוטומטית)
 
