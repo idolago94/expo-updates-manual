@@ -355,6 +355,11 @@ export async function initManualUpdates(): Promise<void> {
 export async function resetSelection(): Promise<void> {
   const { projectId } = getConfig();
   await AsyncStorage.removeItem(storageKey(projectId));
+
+  if (__DEV__) {
+    console.warn('[expo-updates-manual] resetSelection: no-op in development mode.');
+    return;
+  }
   Updates.setUpdateURLAndRequestHeadersOverride(null);
 }
 
@@ -385,7 +390,20 @@ export async function getPersistedUpdateGroupId(): Promise<string | null> {
  * cross-platform API to force that from JS. This function is a best-effort
  * "restart" trigger, not a guarantee that the newly selected update is
  * what comes back up.
+ *
+ * `Updates.reloadAsync()` rejects by design in Expo Go and development
+ * builds ("Could not reload application...") since expo-updates' native
+ * controller is never started there — same reason selectAndApplyUpdate()
+ * no-ops in __DEV__. Mirror that here instead of surfacing that native
+ * error through the picker's restart-confirmation flow.
  */
 export async function restartApp(): Promise<void> {
+  if (__DEV__) {
+    console.warn(
+      '[expo-updates-manual] restartApp: no-op in development mode (Updates.reloadAsync() ' +
+        'only works in a real EAS-built binary, not Expo Go / a dev client).'
+    );
+    return;
+  }
   await Updates.reloadAsync();
 }
