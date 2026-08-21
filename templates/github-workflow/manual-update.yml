@@ -1,20 +1,41 @@
 name: Publish EAS Update (manual selection)
 
-# Runs on tags shaped like update/<channel>/<label>, e.g.
-# "update/preview/1-3-0" or "update/production/2-0-0" (":" is not a
-# valid character in a git ref name, so "/" separates the segments).
-# The channel segment is used both as the EAS branch updates are
+# Two ways in, one job.
+#
+# 1. Push a tag shaped like update/<channel>/<label>, e.g.
+#    "update/preview/1-3-0" or "update/production/2-0-0" (":" is not a
+#    valid character in a git ref name, so "/" separates the segments).
+# 2. Run it from the Actions tab (or the API) and pick the channel and
+#    label from the form. Useful when whoever is publishing cannot push
+#    a tag - an agent session with branch-scoped git credentials, for
+#    instance - and for re-publishing a branch without minting a tag
+#    nobody wanted.
+#
+# Either way the channel is used both as the EAS branch updates are
 # published to AND as the EAS environment whose EXPO_PUBLIC_* variables
-# get baked into the bundle - so a "preview" tag always gets preview
-# config, and a "production" tag always gets production config. It
-# also becomes the value apps filter the update list by (see
-# listAvailableUpdates() in the client), so an app running a
-# "production" build never sees, and can never select, an update
-# published under a different channel.
+# get baked into the bundle - so "preview" always gets preview config,
+# and "production" always gets production config. It also becomes the
+# value apps filter the update list by (see listAvailableUpdates() in
+# the client), so an app running a "production" build never sees, and
+# can never select, an update published under a different channel.
 on:
   push:
     tags:
       - 'update/**'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Channel to publish to (also selects the EAS environment)'
+        required: true
+        type: choice
+        default: preview
+        options:
+          - preview
+          - production
+      label:
+        description: 'Label shown in the in-app update picker, e.g. home-screen-cards'
+        required: true
+        type: string
 
 jobs:
   publish-update:
@@ -35,18 +56,42 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Extract environment and label from tag
-        id: tag
+      - name: Resolve channel and label
+        id: target
+        # The dispatch inputs arrive as environment variables rather than
+        # being interpolated into the script: `label` is free text, and
+        # ${{ }} interpolation would splice it straight into the shell.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_LABEL: ${{ inputs.label }}
         run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-          PREFIX="${TAG%%/*}"
-          REST="${TAG#*/}"
-          ENVIRONMENT="${REST%%/*}"
-          LABEL="${REST#*/}"
-          if [ "$PREFIX" != "update" ] || [ -z "$ENVIRONMENT" ] || [ -z "$LABEL" ] || [ "$ENVIRONMENT" = "$REST" ]; then
-            echo "Tag '$TAG' is not shaped like update/<channel>/<label> - skipping." >&2
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            ENVIRONMENT="$INPUT_CHANNEL"
+            LABEL="$INPUT_LABEL"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+            PREFIX="${TAG%%/*}"
+            REST="${TAG#*/}"
+            ENVIRONMENT="${REST%%/*}"
+            LABEL="${REST#*/}"
+            if [ "$PREFIX" != "update" ] || [ -z "$ENVIRONMENT" ] || [ -z "$LABEL" ] || [ "$ENVIRONMENT" = "$REST" ]; then
+              echo "Tag '$TAG' is not shaped like update/<channel>/<label> - skipping." >&2
+              exit 1
+            fi
+          fi
+          # A tag's shape is constrained by git's own ref rules; a typed
+          # label is not, and it ends up in a shell command, a JSON body
+          # and the picker. Hold both to the same alphabet.
+          if ! printf '%s' "$LABEL" | grep -Eq '^[A-Za-z0-9._/-]+$'; then
+            echo "Label '$LABEL' must be letters, digits, dot, dash, underscore or slash." >&2
             exit 1
           fi
+          if [ "$ENVIRONMENT" != "preview" ] && [ "$ENVIRONMENT" != "production" ]; then
+            echo "Channel '$ENVIRONMENT' is not one of: preview, production." >&2
+            exit 1
+          fi
+          echo "Publishing '$LABEL' to the $ENVIRONMENT channel."
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "label=$LABEL" >> "$GITHUB_OUTPUT"
 
@@ -57,8 +102,8 @@ jobs:
         # .env files, which don't exist in this checkout (gitignored), so
         # every EXPO_PUBLIC_* var would get inlined as literally undefined.
         run: |
-          eas update --branch "${{ steps.tag.outputs.environment }}" \
-            --environment "${{ steps.tag.outputs.environment }}" \
+          eas update --branch "${{ steps.target.outputs.environment }}" \
+            --environment "${{ steps.target.outputs.environment }}" \
             --message "$(git log -1 --pretty=%B | head -n 1)" \
             --non-interactive --json > eas-update-result.json
           cat eas-update-result.json
@@ -74,8 +119,8 @@ jobs:
           SERVER_URL: ${{ secrets.MANUAL_UPDATES_SERVER_URL }}
           API_KEY: ${{ secrets.MANUAL_UPDATES_API_KEY }}
           PROJECT_ID: ${{ steps.project.outputs.id }}
-          ENVIRONMENT: ${{ steps.tag.outputs.environment }}
-          LABEL: ${{ steps.tag.outputs.label }}
+          ENVIRONMENT: ${{ steps.target.outputs.environment }}
+          LABEL: ${{ steps.target.outputs.label }}
         run: |
           node -e "
             const fs = require('fs');
