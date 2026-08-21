@@ -85,7 +85,7 @@ export function UpdatePickerScreen() {
           >
             <Text style={styles.label}>
               {item.label}
-              {item.isDefault ? '  (ברירת מחדל)' : ''}
+              {item.isDefault ? '  (Default)' : ''}
               {item.easUpdateGroupId === currentGroupId ? '  ✓' : ''}
             </Text>
             {item.message ? <Text style={styles.message}>{item.message}</Text> : null}
