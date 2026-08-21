@@ -17,6 +17,8 @@ export type ManualUpdateInfo = {
   createdAt?: string | null;
   /** True when this is the update marked as default for this project+environment on the server. */
   isDefault?: boolean | null;
+  /** The `expo-updates` runtime version this update was published for. */
+  runtimeVersion?: string | null;
 };
 
 /**
@@ -151,16 +153,17 @@ async function getHomeEnvironment(projectId: string): Promise<string> {
 /**
  * Fetches the list of selectable updates for this project from your central
  * server, filtered to this build's home environment (see getHomeEnvironment())
- * — e.g. "preview" or "production". A production build only ever sees, and
- * can only ever select, updates published under the "production"
- * environment — it cannot be pointed at a preview update's config by mistake.
+ * — e.g. "preview" or "production" — and to this install's runtime version
+ * (`Updates.runtimeVersion`). An update published for a different runtime
+ * version can't actually run here (native code/JS API surface mismatch), so
+ * the picker never offers it, even if it's in the same environment.
  */
 export async function listAvailableUpdates(): Promise<ManualUpdateInfo[]> {
   const { apiBaseUrl, projectId } = getConfig();
   const environment = await getHomeEnvironment(projectId);
-  const res = await fetch(
-    `${apiBaseUrl}/api/updates?projectId=${encodeURIComponent(projectId)}&environment=${encodeURIComponent(environment)}`
-  );
+  const params = new URLSearchParams({ projectId, environment });
+  if (Updates.runtimeVersion) params.set('runtimeVersion', Updates.runtimeVersion);
+  const res = await fetch(`${apiBaseUrl}/api/updates?${params.toString()}`);
   if (!res.ok) {
     throw new Error(`[expo-updates-manual] Failed to fetch updates list: ${res.status}`);
   }
@@ -169,16 +172,18 @@ export async function listAvailableUpdates(): Promise<ManualUpdateInfo[]> {
 
 /**
  * Fetches the update currently marked default for this project+environment
- * on the server, or `null` if none is set. This is what `initManualUpdates()`
+ * and runtime version on the server, or `null` if none is set (or the
+ * marked default was published for a different runtime version than this
+ * install — see listAvailableUpdates()). This is what `initManualUpdates()`
  * applies automatically in the background when the user hasn't picked an
  * update themselves.
  */
 export async function getDefaultUpdate(): Promise<ManualUpdateInfo | null> {
   const { apiBaseUrl, projectId } = getConfig();
   const environment = await getHomeEnvironment(projectId);
-  const res = await fetch(
-    `${apiBaseUrl}/api/updates/default?projectId=${encodeURIComponent(projectId)}&environment=${encodeURIComponent(environment)}`
-  );
+  const params = new URLSearchParams({ projectId, environment });
+  if (Updates.runtimeVersion) params.set('runtimeVersion', Updates.runtimeVersion);
+  const res = await fetch(`${apiBaseUrl}/api/updates/default?${params.toString()}`);
   if (!res.ok) {
     throw new Error(`[expo-updates-manual] Failed to fetch default update: ${res.status}`);
   }

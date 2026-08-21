@@ -11,9 +11,9 @@
         ▼
 [GitHub Action] ──eas update --branch <channel> --environment <channel>──▶ [EAS servers]
         │
-        └──POST /api/updates (projectId, environment, label, ...)──▶ [manual-updates-server + MongoDB]
+        └──POST /api/updates (projectId, environment, label, runtimeVersion, ...)──▶ [manual-updates-server + MongoDB]
                                           ▲
-                                          │  GET /api/updates?projectId=X&environment=<Updates.channel>
+                                          │  GET /api/updates?projectId=X&environment=<Updates.channel>&runtimeVersion=<Updates.runtimeVersion>
                                    [האפליקציה שלך]
 ```
 
@@ -22,6 +22,12 @@
 הרשימה. זה בכוונה: **build של production תמיד יראה, ויוכל לבחור, רק עדכונים שפורסמו תחת
 environment `production`** - אין תרחיש שבו production "מקבל בטעות" משתני סביבה או קונפיג של
 preview.
+
+בנוסף, הרשימה מסוננת גם ל-`Updates.runtimeVersion` של ה-build הנוכחי: עדכון שפורסם ל-runtime
+version אחר לא יכול לרוץ על ההתקנה הזו (חוסר התאמה בקוד native / JS API), ולכן הוא לא מוצג
+ב-picker בכלל, גם אם הוא באותו environment. אותו סינון חל גם על ה-update שמסומן כברירת מחדל
+(`getDefaultUpdate()` / `initManualUpdates()`) - אם ברירת המחדל פורסמה ל-runtime אחר, ההתקנה
+הזו תתייחס אליה כאילו אין ברירת מחדל בכלל.
 
 **חשוב לגבי המסנן בפועל:** `Updates.channel` משקף את ה-update שרץ *כרגע*, לא את ה-build. ברגע
 שעדכון שנבחר ידנית רץ (נטען ישירות לפי `easUpdateGroupId`, בלי resolution דרך channel), אין לו
