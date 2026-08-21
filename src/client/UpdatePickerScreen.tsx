@@ -147,6 +147,7 @@ export function UpdatePickerScreen({ theme, texts }: UpdatePickerScreenProps = {
           >
             <Text style={[styles.label, { color: t.textColor }]}>
               {item.label}
+              {item.isDefault ? '  (Default)' : ''}
               {item.easUpdateGroupId === currentGroupId ? '  ✓' : ''}
             </Text>
             {item.message ? (
