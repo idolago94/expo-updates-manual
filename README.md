@@ -279,7 +279,14 @@ manifest קבוע, אז ברגע שהעדכון שנבחר כבר רץ זה בד
 - אחרי בחירה/איפוס אין רענון אוטומטי מיידי - `UpdatePickerScreen` מציג מודל שמבקש אישור ואז קורא
   ל-`restartApp()`, אבל זו רק פעולת "restart" ברמת ה-JS; קליטת ה-override עדיין תלויה בסגירה
   מוחלטת ופתיחה מחדש בפועל של האפליקציה (אין API ציבורי חוצה-פלטפורמות ל-restart תהליך אמיתי
-  מ-JS ב-Expo/React Native).
+  מ-JS ב-Expo/React Native). **בפועל `restartApp()`/`Updates.reloadAsync()` כמעט תמיד נכשל
+  באותו launch שבו נבחר עדכון**: שום דבר עוד לא נשלף תחת ה-override החדש בסשן הנוכחי, אז
+  ל-expo-updates אין מה "launchable" להחזיר, וזה נכשל עם שגיאת native כללית וממש לא קשורה
+  לסיבה האמיתית - `Could not reload application. Ensure you have set the 'appContext' property
+  of AppController.` (מה-`UpdatesReloadException` הגנרי ב-`expo-updates`, לא קשור בפועל לשום
+  `appContext`). `UpdatePickerScreen` תופס את זה ומציג הנחיה ידידותית לסגור ולפתוח את האפליקציה
+  מחדש (`texts.manualRestartMessage`) במקום את הודעת ה-native הגולמית - הבחירה כבר נשמרה בכל
+  מקרה, ורק סגירה-פתיחה מלאה בפועל תחיל אותה.
 - **`selectAndApplyUpdate` / `resetSelection` / `restartApp` הם no-op ב-`__DEV__`** (עם
   `console.warn` בלבד) - כל השלושה קוראים ל-native APIs של `expo-updates`
   (`setUpdateURLAndRequestHeadersOverride` / `reloadAsync`) שדוחים את ה-promise שלהם ב-Expo Go

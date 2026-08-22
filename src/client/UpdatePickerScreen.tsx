@@ -51,6 +51,7 @@ export type UpdatePickerTexts = {
   restartModalTitle?: string;
   restartModalMessage?: string;
   confirmButtonLabel?: string;
+  manualRestartMessage?: string;
 };
 
 const defaultTexts: Required<UpdatePickerTexts> = {
@@ -59,6 +60,8 @@ const defaultTexts: Required<UpdatePickerTexts> = {
   restartModalTitle: 'The app will restart',
   restartModalMessage: 'Restart the app to apply your selection',
   confirmButtonLabel: 'Confirm',
+  manualRestartMessage:
+    'Your selection is saved. Please close the app completely and reopen it to apply it.',
 };
 
 export type UpdatePickerScreenProps = {
@@ -123,7 +126,14 @@ export function UpdatePickerScreen({ theme, texts }: UpdatePickerScreenProps = {
       setRestarting(true);
       await restartApp();
     } catch (e: any) {
-      setError(e.message);
+      // Updates.reloadAsync() legitimately fails right here: selecting/resetting
+      // only sets an override + persists it (see selectAndApplyUpdate()/resetSelection()
+      // docs) - nothing new has been fetched in *this* running session yet, so
+      // expo-updates has nothing launchable to hand back and rejects with a native
+      // "appContext"/"AppController" error that's misleading about the real cause.
+      // The selection is already saved regardless; only a full close+reopen actually
+      // applies it, so tell the user that instead of surfacing the raw native error.
+      setError(s.manualRestartMessage);
     } finally {
       // In production restartApp() tears down this JS context via
       // Updates.reloadAsync(), so this never actually runs there. In
