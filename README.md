@@ -40,9 +40,13 @@ channel בכלל וה-`Updates.channel` חוזר ריק. לכן `listAvailableUp
 
 ```bash
 npm install github:idolago94/expo-updates-manual
+npx expo install react-native-restart
 ```
 
 מריץ אוטומטית `postinstall` שמוסיף `.github/workflows/manual-update.yml` לפרויקט (אם אין כבר קובץ כזה).
+
+`react-native-restart` הוא peer dependency - `restartApp()` (ראה בהמשך) משתמש בו כדי לבצע restart
+אמיתי אחרי בחירת/איפוס עדכון. דורש build חדש דרך EAS (native module, לא זמין ב-Expo Go).
 
 ## הגדרה - app.json
 
@@ -105,11 +109,11 @@ import { UpdatePickerScreen } from '@lagoapps/expo-updates-manual/src/client/Upd
 
 הבחירה נשמרת ב-AsyncStorage. **חשוב:** `selectAndApplyUpdate`/`resetSelection` לא מרעננים את
 האפליקציה מיידית - לפי התיעוד של Expo, override של `updateUrl` נכנס לתוקף רק בהפעלה מלאה הבאה
-(סגירה מוחלטת ופתיחה מחדש - `Updates.reloadAsync()` לא מספיק בשביל זה). לכן `UpdatePickerScreen`
-מציג מודל שמודיע שהאפליקציה תופעל מחדש; לחיצה על "אישור" קוראת ל-`restartApp()` (עטיפה סביב
-`Updates.reloadAsync()`) - זו פעולת ה-"restart" הזמינה מ-JS ב-Expo, אבל היא לא מבטיחה שה-override
-עצמו ייקלט (זה עדיין דורש סגירה מוחלטת ופתיחה מחדש בפועל). ב-launch הבא, `initManualUpdates()`
-בפועל מוריד ומחיל את העדכון שנבחר.
+(סגירה מוחלטת ופתיחה מחדש). לכן `UpdatePickerScreen` מציג מודל שמודיע שהאפליקציה תופעל מחדש;
+לחיצה על "אישור" קוראת ל-`restartApp()` (עטיפה סביב `RNRestart.restart()` מ-`react-native-restart`)
+- ב-Android זה מבצע restart אמיתי של התהליך, מה שכן קולט את ה-override; ב-iOS זו עדיין רק פעולת
+reload ברמת ה-JS, ואין דרך לעקוף את הצורך בסגירה מוחלטת ופתיחה מחדש בפועל שם (ראה "הערות" בהמשך).
+ב-launch הבא, `initManualUpdates()` בפועל מוריד ומחיל את העדכון שנבחר.
 
 ## עדכון ברירת מחדל (default update)
 
@@ -277,13 +281,21 @@ manifest קבוע, אז ברגע שהעדכון שנבחר כבר רץ זה בד
   אצלך בגרסת ה-eas-cli הנוכחית ולהתאים ב-`templates/github-workflow/manual-update.yml` אם צריך -
   `easUpdateGroupId` (השדה ש-`selectAndApplyUpdate` בפועל צריך) ממופה משם.
 - אחרי בחירה/איפוס אין רענון אוטומטי מיידי - `UpdatePickerScreen` מציג מודל שמבקש אישור ואז קורא
-  ל-`restartApp()`, אבל זו רק פעולת "restart" ברמת ה-JS; קליטת ה-override עדיין תלויה בסגירה
-  מוחלטת ופתיחה מחדש בפועל של האפליקציה (אין API ציבורי חוצה-פלטפורמות ל-restart תהליך אמיתי
-  מ-JS ב-Expo/React Native).
+  ל-`restartApp()`, שמשתמש ב-`react-native-restart` (`RNRestart.restart()`) במקום
+  `Updates.reloadAsync()` הישן, בדיוק כדי לקלוט את ה-override בפועל:
+  - **Android:** `RNRestart.restart()` הורג ומפעיל מחדש את כל התהליך הנטיבי (בדומה ל-
+    Process Phoenix) - זה מריץ מחדש את entry point של ה-JS מאפס, בדיוק כמו סגירה ופתיחה ידנית של
+    האפליקציה, כך ש-`initManualUpdates()` בפעם הבאה שהוא רץ *באמת* מוריד ומחיל את ה-override. זה
+    פותר את הבעיה בפועל ב-Android.
+  - **iOS:** אין ל-Apple API ציבורי לאפליקציה להפעיל את עצמה מחדש כתהליך - `RNRestart.restart()`
+    שם מבצע רק reload של ה-JS bundle (כמו `Updates.reloadAsync()` הישן), בלי לגעת ב-native
+    controller של expo-updates. ב-iOS **עדיין נדרשת סגירה ופתיחה ידנית בפועל** של האפליקציה כדי
+    שה-override ייקלט - אין דרך לעקוף את זה מ-JS.
 - **`selectAndApplyUpdate` / `resetSelection` / `restartApp` הם no-op ב-`__DEV__`** (עם
-  `console.warn` בלבד) - כל השלושה קוראים ל-native APIs של `expo-updates`
-  (`setUpdateURLAndRequestHeadersOverride` / `reloadAsync`) שדוחים את ה-promise שלהם ב-Expo Go
-  ובכל dev/debug build, כי ה-native controller של expo-updates לא מאותחל שם בכלל. `UpdatePickerScreen`
-  עצמו לא בודק `__DEV__` - הוא פשוט מציג את מודל ה-restart כרגיל גם ב-dev, ולחיצה על אישור פשוט לא
-  עושה כלום (עם אזהרה בקונסול) במקום לזרוק שגיאת native. כדי לבדוק את הזרימה בפועל צריך build אמיתי
-  דרך EAS (profile עם `internal`/`preview` distribution) - לא Expo Go ולא dev client.
+  `console.warn` בלבד) - `selectAndApplyUpdate`/`resetSelection` קוראים ל-native API של
+  `expo-updates` (`setUpdateURLAndRequestHeadersOverride`) שדוחה את ה-promise שלו ב-Expo Go
+  ובכל dev/debug build, ו-`restartApp` מסתמך על `react-native-restart` שהוא native module שלא
+  זמין שם בכלל (אין לו build נטיבי מקושר). `UpdatePickerScreen` עצמו לא בודק `__DEV__` - הוא פשוט
+  מציג את מודל ה-restart כרגיל גם ב-dev, ולחיצה על אישור פשוט לא עושה כלום (עם אזהרה בקונסול)
+  במקום לזרוק שגיאת native. כדי לבדוק את הזרימה בפועל צריך build אמיתי דרך EAS (profile עם
+  `internal`/`preview` distribution) - לא Expo Go ולא dev client.

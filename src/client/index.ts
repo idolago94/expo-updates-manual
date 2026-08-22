@@ -1,6 +1,7 @@
 import * as Updates from 'expo-updates';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import RNRestart from 'react-native-restart';
 
 export type ManualUpdateInfo = {
   /**
@@ -379,31 +380,36 @@ export async function getPersistedUpdateGroupId(): Promise<string | null> {
 }
 
 /**
- * Reloads the app's JS runtime — the standard Expo "restart" primitive,
- * used to give the user a restart-like moment after selecting or resetting
- * an update.
- *
- * NOTE: per Expo's docs, this alone does NOT make
+ * Restarts the app to give the user a restart-like moment after selecting or
+ * resetting an update — using `react-native-restart` instead of
+ * `Updates.reloadAsync()`, since a plain JS reload does NOT make
  * `setUpdateURLAndRequestHeadersOverride()` (used by selectAndApplyUpdate()/
- * resetSelection()) pick up the new override — that still only happens on
- * the next full close-and-reopen of the app. There is no public
- * cross-platform API to force that from JS. This function is a best-effort
- * "restart" trigger, not a guarantee that the newly selected update is
- * what comes back up.
+ * resetSelection()) pick up the new override.
  *
- * `Updates.reloadAsync()` rejects by design in Expo Go and development
- * builds ("Could not reload application...") since expo-updates' native
- * controller is never started there — same reason selectAndApplyUpdate()
- * no-ops in __DEV__. Mirror that here instead of surfacing that native
- * error through the picker's restart-confirmation flow.
+ * Platform behavior differs, per `react-native-restart`'s own docs:
+ * - Android: `RNRestart.restart()` kills and relaunches the whole native
+ *   process, which re-runs the JS entry point (and thus `initManualUpdates()`)
+ *   from scratch — equivalent to the user manually closing and reopening the
+ *   app. This is the only way to make the override take effect without
+ *   asking the user to do that themselves.
+ * - iOS: there is no public API for a real process restart (Apple doesn't
+ *   allow an app to relaunch itself), so `RNRestart.restart()` only reloads
+ *   the JS bundle in-place — the same limitation `Updates.reloadAsync()` had.
+ *   The override still only takes effect on iOS after the user fully closes
+ *   and reopens the app themselves.
+ *
+ * Requires a real native build with `react-native-restart` linked (a Metro
+ * dev bundle has no such native module) — same reason selectAndApplyUpdate()
+ * no-ops in __DEV__. Mirror that here instead of surfacing a native error
+ * through the picker's restart-confirmation flow.
  */
 export async function restartApp(): Promise<void> {
   if (__DEV__) {
     console.warn(
-      '[expo-updates-manual] restartApp: no-op in development mode (Updates.reloadAsync() ' +
-        'only works in a real EAS-built binary, not Expo Go / a dev client).'
+      '[expo-updates-manual] restartApp: no-op in development mode (a real restart requires ' +
+        'react-native-restart linked into an EAS-built binary, not Expo Go / a dev client).'
     );
     return;
   }
-  await Updates.reloadAsync();
+  RNRestart.restart();
 }
